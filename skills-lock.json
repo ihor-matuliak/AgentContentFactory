@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "skills": {
+    "brainstorming": {
+      "sourceType": "local",
+      "skillPath": ".claude/skills/brainstorming/SKILL.md",
+      "computedHash": "bba47904a7f6bbee3bf8a107ebbe84e65d392be683bbb898ded736b29e415f90"
+    },
+    "frontend-design": {
+      "sourceType": "local",
+      "skillPath": ".claude/skills/frontend-design/SKILL.md",
+      "computedHash": "35c43b9d10c2388dbb228047ad028c989a14033750812125f351c85aa42c7a4a"
+    },
+    "skill-creator": {
+      "sourceType": "local",
+      "skillPath": ".claude/skills/skill-creator/SKILL.md",
+      "computedHash": "e030e7685e26283b4a76f5202aa3ae8516fb41dde799be5ae8ea6393ec009fe9"
+    },
+    "tailwind": {
+      "sourceType": "local",
+      "skillPath": ".claude/skills/tailwind/SKILL.md",
+      "computedHash": "a19824a7bedeeafe1639144cc986fdc9ddc9e26c3626bbfb34de67d61a53bc38"
+    },
+    "ui-ux-pro-max": {
+      "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/ui-ux-pro-max/SKILL.md",
+      "computedHash": "6337038fe1fe6bbe1b9f252ab678ee575859190bab6f0f246f4061824eb40875"
+    }
+  }
+}

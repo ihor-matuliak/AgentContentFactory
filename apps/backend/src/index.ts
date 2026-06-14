@@ -1,0 +1,34 @@
+import cors from "cors";
+import express from "express";
+import type { HealthResponse } from "@swarm/shared";
+import { env, hasClaudeCredentials } from "./env.js";
+import { agentsRouter } from "./routes/agents.js";
+
+const app = express();
+
+app.use(cors());
+app.use(express.json());
+
+/** GET /api/health — перевірка стану бекенду. */
+app.get("/api/health", (_req, res) => {
+  const body: HealthResponse = {
+    status: "ok",
+    service: "@swarm/backend",
+    time: new Date().toISOString(),
+  };
+  res.json(body);
+});
+
+app.use("/api/agents", agentsRouter);
+
+app.listen(env.backendPort, () => {
+  console.log(`🚀 Бекенд рою слухає на http://localhost:${env.backendPort}`);
+  console.log(`   Health: http://localhost:${env.backendPort}/api/health`);
+  if (!hasClaudeCredentials) {
+    console.warn(
+      "⚠️  Доступ до Claude не налаштовано — додайте CLAUDE_CODE_OAUTH_TOKEN або ANTHROPIC_API_KEY у .env",
+    );
+  } else {
+    console.log(`   Модель Claude: ${env.anthropicModel}`);
+  }
+});

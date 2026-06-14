@@ -1,0 +1,27 @@
+{
+  "name": "agent-content-factory",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "packages/**",
+    "apps/**"
+  ],
+  "scripts": {
+    "dev": "concurrently -n backend,dashboard -c yellow,cyan \"npm:dev:backend\" \"npm:dev:dashboard\"",
+    "dev:backend": "tsx apps/backend/src/index.ts",
+    "dev:backend:watch": "tsx watch apps/backend/src/index.ts",
+    "dev:dashboard": "npm run dev --workspace @swarm/dashboard",
+    "build": "npm run build --workspaces --if-present",
+    "start": "npm run start --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspace @swarm/shared && npm run typecheck --workspace @swarm/backend && npm run typecheck --workspace @swarm/dashboard",
+    "db:setup": "bash ./db/setup.sh",
+    "db:seed": "bash ./db/seed.sh",
+    "db:reset": "bash ./db/reset.sh"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

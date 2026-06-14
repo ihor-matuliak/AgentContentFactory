@@ -1,0 +1,141 @@
+@import "tailwindcss";
+
+/*
+ * Agent Content Factory — дизайн-система «Командний центр вулика».
+ * Темний чорнильно-синій фон, єдиний теплий бурштиновий акцент (метафора рою),
+ * телеметричні моноширинні цифри для статистики.
+ */
+@theme {
+  /* Поверхні */
+  --color-ink: #0a0e17;
+  --color-base: #0d121e;
+  --color-surface: #131a2a;
+  --color-surface-2: #1a2334;
+  --color-border: #232e44;
+  --color-border-strong: #324061;
+
+  /* Текст */
+  --color-fg: #e9edf6;
+  --color-fg-muted: #8b95ac;
+  --color-fg-subtle: #6b768f;
+  --color-fg-faint: #586176;
+
+  /* Акцент — бурштин/мед (рій) */
+  --color-honey: #f5b544;
+  --color-honey-bright: #ffc964;
+  --color-honey-dim: #b9842a;
+
+  /* Статуси */
+  --color-online: #3ddc97;
+  --color-busy: #fbbf24;
+  --color-offline: #6b768f;
+  --color-danger: #fb7185;
+  --color-info: #56b6f7;
+
+  /* Шрифти */
+  --font-display: var(--font-space-grotesk), system-ui, sans-serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+
+  /* Радіуси */
+  --radius-card: 16px;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-ink);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Тонка атмосфера: м'яке бурштинове сяйво згори-ліворуч. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      radial-gradient(60rem 40rem at 12% -10%, rgba(245, 181, 68, 0.07), transparent 60%),
+      radial-gradient(50rem 40rem at 100% 0%, rgba(86, 182, 247, 0.05), transparent 55%);
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
+
+  ::selection {
+    background: rgba(245, 181, 68, 0.28);
+  }
+
+  /* Скролбар у тон інтерфейсу. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border-strong);
+    border-radius: 999px;
+    border: 2px solid var(--color-ink);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3f5081;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display);
+  }
+  .font-mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* М'яка анімація появи повідомлень/карток. */
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .animate-rise {
+    animation: rise 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  @keyframes typing {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+    30% { transform: translateY(-3px); opacity: 1; }
+  }
+  .typing-dot {
+    animation: typing 1.2s infinite ease-in-out;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-rise,
+    .typing-dot {
+      animation: none;
+    }
+  }
+}
