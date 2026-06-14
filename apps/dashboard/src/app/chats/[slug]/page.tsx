@@ -10,6 +10,9 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import type { Components } from "react-markdown";
 import type { AgentSummary, ChatMessage } from "@swarm/shared";
 import { api } from "@/lib/api";
 import { AgentBadge, StatusBadge } from "@/components/ui";
@@ -133,7 +136,7 @@ export default function ChatPage() {
       {/* Шапка чату */}
       <header className="flex items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-base)]/70 px-6 py-4 backdrop-blur md:px-8">
         <Link
-          href="/chat"
+          href="/chats"
           aria-label="Назад до списку чатів"
           className="grid h-9 w-9 place-items-center rounded-lg text-[var(--color-fg-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-fg)]"
         >
@@ -232,6 +235,62 @@ export default function ChatPage() {
   );
 }
 
+/** Стилі markdown-елементів у відповідях агентів (під дизайн-систему). */
+const mdComponents: Components = {
+  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+  ul: ({ children }) => (
+    <ul className="mb-2 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>
+  ),
+  ol: ({ children }) => (
+    <ol className="mb-2 list-decimal space-y-1 pl-5 last:mb-0">{children}</ol>
+  ),
+  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+  strong: ({ children }) => (
+    <strong className="font-semibold text-[var(--color-fg)]">{children}</strong>
+  ),
+  em: ({ children }) => <em className="italic">{children}</em>,
+  h1: ({ children }) => (
+    <h1 className="mb-2 mt-1 font-display text-[17px] font-semibold">{children}</h1>
+  ),
+  h2: ({ children }) => (
+    <h2 className="mb-2 mt-1 font-display text-[16px] font-semibold">{children}</h2>
+  ),
+  h3: ({ children }) => (
+    <h3 className="mb-1.5 mt-1 font-display text-[15px] font-semibold">{children}</h3>
+  ),
+  a: ({ children, href }) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-[var(--color-honey)] underline underline-offset-2 hover:text-[var(--color-honey-bright)]"
+    >
+      {children}
+    </a>
+  ),
+  code: ({ className, children }) => {
+    const isBlock = (className ?? "").includes("language-");
+    if (isBlock) {
+      return (
+        <code className="block overflow-x-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-base)] p-3 font-mono text-[12.5px] leading-relaxed">
+          {children}
+        </code>
+      );
+    }
+    return (
+      <code className="rounded bg-[var(--color-base)] px-1.5 py-0.5 font-mono text-[12.5px] text-[var(--color-honey)]">
+        {children}
+      </code>
+    );
+  },
+  pre: ({ children }) => <pre className="mb-2 last:mb-0">{children}</pre>,
+  blockquote: ({ children }) => (
+    <blockquote className="my-2 border-l-2 border-[var(--color-honey)]/50 pl-3 text-[var(--color-fg-muted)]">
+      {children}
+    </blockquote>
+  ),
+};
+
 function MessageBubble({
   message,
   agentName,
@@ -251,13 +310,19 @@ function MessageBubble({
       <div className={isUser ? "max-w-[80%]" : "max-w-[80%]"}>
         <div
           className={[
-            "whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-[14px] leading-relaxed",
+            "rounded-2xl px-4 py-2.5 text-[14px] leading-relaxed",
             isUser
-              ? "rounded-br-md bg-[var(--color-honey)] text-[var(--color-ink)]"
+              ? "whitespace-pre-wrap rounded-br-md bg-[var(--color-honey)] text-[var(--color-ink)]"
               : "rounded-bl-md border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-fg)]",
           ].join(" ")}
         >
-          {message.content}
+          {isUser ? (
+            message.content
+          ) : (
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+              {message.content}
+            </ReactMarkdown>
+          )}
         </div>
         <div
           className={[

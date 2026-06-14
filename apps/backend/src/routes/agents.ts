@@ -7,7 +7,7 @@ import type {
   ChatResponse,
 } from "@swarm/shared";
 import { query } from "../db.js";
-import { generateAgentReply } from "../agents/conversational.js";
+import { getChatHandler } from "../agents/handlers.js";
 
 export const agentsRouter = Router();
 
@@ -120,7 +120,8 @@ agentsRouter.post("/:slug/chat", async (req, res) => {
     const history = await loadHistory(agent.id);
     const userMessage = await insertMessage(agent.id, "user", message);
 
-    const replyText = await generateAgentReply(agent, history, message);
+    const handler = getChatHandler(agent.slug);
+    const replyText = await handler(agent, history, message);
     const reply = await insertMessage(agent.id, "assistant", replyText);
 
     const response: ChatResponse = { userMessage, reply };

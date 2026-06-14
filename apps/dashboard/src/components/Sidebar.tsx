@@ -24,7 +24,7 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   { label: "Огляд", href: "/", icon: OverviewIcon },
-  { label: "Чати з агентами", href: "/chat", icon: ChatIcon },
+  { label: "Чати з агентами", href: "/chats", icon: ChatIcon },
   { label: "Прогони рою", href: "/runs", icon: RunsIcon, soon: true },
   { label: "Пакети медіа", href: "/media", icon: MediaIcon, soon: true },
   { label: "Задачі", href: "/tasks", icon: TasksIcon, soon: true },

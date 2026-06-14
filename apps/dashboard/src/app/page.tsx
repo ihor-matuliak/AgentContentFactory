@@ -159,7 +159,7 @@ export default function OverviewPage() {
                   Поки тиша. Напишіть Стратегу — і тут зʼявиться стрічка подій.
                 </p>
                 <Link
-                  href={`/chat/${STRATEGIST_SLUG}`}
+                  href={`/chats/${STRATEGIST_SLUG}`}
                   className="mt-4 inline-flex items-center gap-2 rounded-lg bg-[var(--color-honey)] px-4 py-2 text-[13px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-honey-bright)]"
                 >
                   <SparkIcon width={16} height={16} />
@@ -202,7 +202,7 @@ export default function OverviewPage() {
             <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
               <h2 className="text-[15px] font-semibold">Команда рою</h2>
               <Link
-                href="/chat"
+                href="/chats"
                 className="text-[12px] text-[var(--color-honey)] hover:text-[var(--color-honey-bright)]"
               >
                 Усі чати →
@@ -220,7 +220,7 @@ export default function OverviewPage() {
                 {agents.map((a) => (
                   <li key={a.id}>
                     <Link
-                      href={`/chat/${a.slug}`}
+                      href={`/chats/${a.slug}`}
                       className="flex items-center gap-3 rounded-xl px-3 py-3 transition-colors hover:bg-[var(--color-surface-2)]"
                     >
                       <AgentBadge name={a.name} />
@@ -241,7 +241,7 @@ export default function OverviewPage() {
 
         {/* Швидкий перехід у чат */}
         <Link
-          href={`/chat/${STRATEGIST_SLUG}`}
+          href={`/chats/${STRATEGIST_SLUG}`}
           className="group flex items-center justify-between rounded-[var(--radius-card)] border border-[var(--color-honey)]/25 bg-gradient-to-r from-[var(--color-honey)]/10 to-transparent px-6 py-5 transition-colors hover:border-[var(--color-honey)]/45"
         >
           <div className="flex items-center gap-3">
