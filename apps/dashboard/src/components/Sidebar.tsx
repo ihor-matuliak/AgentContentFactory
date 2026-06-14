@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ComponentType, SVGProps } from "react";
+import { useEffect, useState, type ComponentType, type SVGProps } from "react";
+import { api } from "@/lib/api";
 import {
   AnalyticsIcon,
   ChatIcon,
   HexLogo,
   MediaIcon,
   OverviewIcon,
+  ReviewIcon,
   RunsIcon,
   SettingsIcon,
   TasksIcon,
@@ -20,12 +22,15 @@ type NavItem = {
   icon: ComponentType<SVGProps<SVGSVGElement>>;
   /** Розділ ще не реалізовано — показуємо як «скоро» без переходу. */
   soon?: boolean;
+  /** Показувати лічильник непрочитаних сповіщень. */
+  badge?: boolean;
 };
 
 const NAV: NavItem[] = [
   { label: "Огляд", href: "/", icon: OverviewIcon },
   { label: "Чати з агентами", href: "/chats", icon: ChatIcon },
-  { label: "Прогони рою", href: "/runs", icon: RunsIcon, soon: true },
+  { label: "Прогони рою", href: "/runs", icon: RunsIcon },
+  { label: "На перевірці", href: "/review", icon: ReviewIcon, badge: true },
   { label: "Пакети медіа", href: "/media", icon: MediaIcon, soon: true },
   { label: "Задачі", href: "/tasks", icon: TasksIcon, soon: true },
   { label: "Аналітика", href: "/analytics", icon: AnalyticsIcon, soon: true },
@@ -34,6 +39,22 @@ const NAV: NavItem[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const [unread, setUnread] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    const tick = () =>
+      api
+        .unreadCount()
+        .then((r) => alive && setUnread(r.unread))
+        .catch(() => {});
+    void tick();
+    const t = setInterval(tick, 8000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [pathname]);
 
   return (
     <aside className="sticky top-0 z-10 flex h-dvh w-[256px] shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-base)]/80 backdrop-blur">
@@ -98,6 +119,11 @@ export function Sidebar() {
                 }
               />
               <span className="flex-1">{item.label}</span>
+              {item.badge && unread > 0 && (
+                <span className="grid h-5 min-w-5 place-items-center rounded-full bg-[var(--color-honey)] px-1.5 font-mono text-[11px] font-semibold text-[var(--color-ink)]">
+                  {unread}
+                </span>
+              )}
             </Link>
           );
         })}

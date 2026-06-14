@@ -19,7 +19,9 @@
     "typecheck": "npm run typecheck --workspace @swarm/shared && npm run typecheck --workspace @swarm/backend && npm run typecheck --workspace @swarm/dashboard",
     "db:setup": "bash ./db/setup.sh",
     "db:seed": "bash ./db/seed.sh",
-    "db:reset": "bash ./db/reset.sh"
+    "db:migrate": "bash ./db/migrate.sh",
+    "db:reset": "bash ./db/reset.sh",
+    "telegram:chat-id": "tsx apps/backend/src/scripts/telegram-chat-id.ts"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

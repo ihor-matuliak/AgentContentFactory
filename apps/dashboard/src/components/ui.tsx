@@ -1,4 +1,4 @@
-import type { AgentStatus } from "@swarm/shared";
+import type { AgentStatus, RunStatus, TaskStatus } from "@swarm/shared";
 import type { ReactNode } from "react";
 
 /** Заголовок сторінки з підзаголовком і слотом праворуч. */
@@ -48,6 +48,82 @@ export function StatusBadge({ status }: { status: AgentStatus }) {
       />
       {meta.label}
     </span>
+  );
+}
+
+// ─────────────────────────── Статуси прогонів (Фаза 3) ───────────────────────
+
+const RUN_STATUS_META: Record<RunStatus, { label: string; fg: string; bg: string }> = {
+  planning: { label: "Планування", fg: "var(--color-info)", bg: "rgba(86,182,247,0.12)" },
+  awaiting_approval: {
+    label: "Чекає схвалення плану",
+    fg: "var(--color-honey)",
+    bg: "rgba(245,181,68,0.12)",
+  },
+  running: { label: "Виконання", fg: "var(--color-busy)", bg: "rgba(251,191,36,0.12)" },
+  awaiting_review: {
+    label: "На твоїй перевірці",
+    fg: "var(--color-honey-bright)",
+    bg: "rgba(255,201,100,0.14)",
+  },
+  completed: { label: "Завершено", fg: "var(--color-online)", bg: "rgba(61,220,151,0.12)" },
+  failed: { label: "Помилка", fg: "var(--color-danger)", bg: "rgba(251,113,133,0.12)" },
+};
+
+/** Пігулка статусу прогону. */
+export function RunStatusBadge({ status }: { status: RunStatus }) {
+  const meta = RUN_STATUS_META[status] ?? RUN_STATUS_META.planning;
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] font-medium"
+      style={{ color: meta.fg, backgroundColor: meta.bg }}
+    >
+      <span
+        className="h-1.5 w-1.5 rounded-full"
+        style={{ backgroundColor: meta.fg, boxShadow: `0 0 7px ${meta.fg}` }}
+      />
+      {meta.label}
+    </span>
+  );
+}
+
+const TASK_STATUS_META: Record<TaskStatus, { label: string; color: string }> = {
+  pending: { label: "У черзі", color: "var(--color-fg-subtle)" },
+  in_progress: { label: "Працює", color: "var(--color-busy)" },
+  done: { label: "Готово", color: "var(--color-info)" },
+  approved: { label: "Схвалено", color: "var(--color-online)" },
+  failed: { label: "Помилка", color: "var(--color-danger)" },
+};
+
+/** Крапка + підпис статусу завдання. */
+export function TaskStatusBadge({ status }: { status: TaskStatus }) {
+  const meta = TASK_STATUS_META[status] ?? TASK_STATUS_META.pending;
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: meta.color }}>
+      <span
+        className="h-2 w-2 rounded-full"
+        style={{ backgroundColor: meta.color, boxShadow: `0 0 7px ${meta.color}` }}
+      />
+      {meta.label}
+    </span>
+  );
+}
+
+/** Тонкий прогрес-бар (виконано/усього). */
+export function ProgressBar({ done, total }: { done: number; total: number }) {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  return (
+    <div className="flex items-center gap-3">
+      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--color-surface-2)]">
+        <div
+          className="h-full rounded-full bg-[var(--color-honey)] transition-all"
+          style={{ width: `${pct}%`, boxShadow: "0 0 10px rgba(245,181,68,0.5)" }}
+        />
+      </div>
+      <span className="shrink-0 font-mono text-[11px] tabular text-[var(--color-fg-subtle)]">
+        {done}/{total}
+      </span>
+    </div>
   );
 }
 

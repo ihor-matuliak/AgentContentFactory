@@ -37,6 +37,9 @@ export const env = {
   claudeOAuthToken: process.env.CLAUDE_CODE_OAUTH_TOKEN ?? "",
   /** API-ключ Anthropic (резервний шлях доступу). */
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
+  /** Telegram-бот для сповіщень власника (необовʼязково). */
+  telegramBotToken: process.env.TELEGRAM_BOT_TOKEN ?? "",
+  telegramOwnerChatId: process.env.TELEGRAM_OWNER_CHAT_ID ?? "",
 } as const;
 
 /**

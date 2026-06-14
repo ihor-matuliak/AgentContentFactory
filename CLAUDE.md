@@ -1,34 +1,47 @@
 # Agent Content Factory — Пам'ятка проєкту
 
 ## Опис проєкту
-Ми будуємо **Agent Content Factory** — систему автономного ведення соціальних мереж, яка складається з **8 ШІ-агентів** (рій). Кожен агент має власний «характер» (системний промпт) і зону відповідальності. Вже зараз з кожним агентом можна листуватися віч-на-віч через дашборд.
+Ми будуємо **Agent Content Factory** — систему автономного ведення соціальних мереж, яка складається з **8 ШІ-агентів** (рій). Кожен агент має власний «характер» (системний промпт) і зону відповідальності. З кожним агентом можна листуватися віч-на-віч через дашборд, а також **зв'язати їх у рій**: одна ціль власника = один **прогін рою**, де Стратег планує й роздає завдання, виконавці їх роблять, Критик перевіряє, а Стратег пише підсумкове зведення.
 
 ## Стек технологій
 - **Архітектура:** Монорепозиторій на базі npm workspaces (`apps/*`, `packages/*`)
 - **Дашборд (Фронтенд):** Next.js 16 (App Router, Turbopack) + React 19 + Tailwind CSS 4 — `apps/dashboard` (`@swarm/dashboard`), порт **3000**
 - **Бекенд:** Node.js + Express 5 + tsx (TypeScript Execute), `pg` — `apps/backend` (`@swarm/backend`), порт **4000**
-- **Спільні типи:** `packages/shared` (`@swarm/shared`) — TS-типи `Agent`, `ChatMessage`, запити/відповіді API
+- **Спільні типи:** `packages/shared` (`@swarm/shared`) — TS-типи `Agent`, `ChatMessage`, а також прогонів рою (`Run`, `RunTask`, `SwarmEvent`, `ActivityEntry`, `ReviewItem`…) і запити/відповіді API
 - **База даних:** PostgreSQL 16 — база `ai_agent_swarm`, роль/пароль `swarm`/`swarm`, порт 5432
-- **Агенти:** Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`), модель `claude-sonnet-4-6`
+- **Агенти:** Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`), модель `claude-sonnet-4-6`; інструменти агентів — через zod + вбудований MCP-сервер SDK
 
 ## Структура репозиторію
 - `apps/dashboard` — фронтенд:
-  - `src/app/` — сторінки: `/` (Огляд), `/chats` (список агентів), `/chats/[slug]` (чат з агентом)
-  - `src/components/` — `Sidebar.tsx`, `ui.tsx`, `icons.tsx`
+  - `src/app/` — сторінки: `/` (Огляд), `/chats` + `/chats/[slug]` (чати), `/runs` + `/runs/[slug]` (прогони рою), `/review` (на перевірці)
+  - `src/components/` — `Sidebar.tsx` (з лічильником сповіщень), `ui.tsx` (бейджі статусів, прогрес-бар), `icons.tsx`, `Markdown.tsx` (рендер відповідей/результатів)
   - `src/lib/api.ts` — клієнт бекенду (адреса з `NEXT_PUBLIC_BACKEND_URL`)
 - `apps/backend` — бекенд:
-  - `src/index.ts` — Express-застосунок, `GET /api/health`, монтує роутер на `/api/agents`
+  - `src/index.ts` — Express-застосунок, `GET /api/health`, монтує роутери `/api/agents`, `/api/runs`, `/api/events`; на старті піднімає чергу (`resumeQueue`)
   - `src/routes/agents.ts` — список агентів, історія, `POST /api/agents/:slug/chat`
-  - `src/agents/conversational.ts` — спільний рушій діалогу поверх Claude Agent SDK
-  - `src/agents/handlers.ts` — реєстр `slug → обробник` (усі агенти зараз через `conversational.ts`)
+  - `src/routes/runs.ts` — створення/список/деталі прогонів, схвалення плану, рішення на перевірці
+  - `src/routes/events.ts` — стрічка сповіщень + лічильник непрочитаних
+  - `src/agents/conversational.ts` — рушій чату; `src/agents/handlers.ts` — реєстр `slug → обробник`
+  - `src/agents/orchestrator.ts` — рушій прогону: планування → виконання → перевірка Критиком (до 2 кіл) → зведення
+  - `src/agents/queue.ts` — фонова черга прогонів (послідовно, відновлюється після рестарту)
+  - `src/agents/runner.ts` — низькорівневий виклик агента (текст + витрати); `src/agents/tools.ts` — «руки» агента (MCP, zod), прив'язані до прогону/завдання
+  - `src/store.ts` — доступ до `runs`/`tasks`; `src/journal.ts` — `activity_log` + `events`
+  - `src/notify.ts` — Telegram-сповіщення (необов'язково); `src/scripts/telegram-chat-id.ts`
   - `src/env.ts`, `src/db.ts`
 - `packages/shared` — спільні TS-типи
-- `db/` — `schema.sql`, `seed.sql`, та скрипти `setup.sh` / `seed.sh` / `reset.sh`
+- `db/` — `schema.sql`, `seed.sql`, `migrate.sql` (Фаза 3, безпечна міграція) + скрипти `setup.sh` / `seed.sh` / `migrate.sh` / `reset.sh`
 
 ## Агенти та їхні «характери»
 **Характери (особистості) агентів живуть у `db/seed.sql`, а не в коді.** Системний промпт із бази визначає тон і поведінку агента; обробник у `handlers.ts` лише обирає рушій (зараз — спільний `conversational.ts`). Щоб переписати будь-який характер: відредагуй промпт у `db/seed.sql` і виконай `npm run db:seed` — це **UPSERT за `slug`**, він оновлює дані агентів і **не стирає історію чатів**.
 
 Поточний склад рою (8): `strategist` (Стратег), `scriptwriter` (Сценарист), `reelsmaker` (Рілсмейкер), `video-editor` (Монтажер), `designer` (Дизайнер), `publisher` (Публікатор), `programmer` (Програміст), `critic` (Критик). Усі промпти — **українською**, кожен агент відповідає українською у своєму тоні.
+
+## Прогони рою (Фаза 3)
+- **Потік:** власник ставить ціль на `/runs` → Стратег планує завдання → **дрібний** прогін стартує одразу, **великий** (кілька завдань) стає у статус «чекає схвалення плану» (власник тисне «Запустити рій») → виконавці роблять завдання по черзі, Критик перевіряє (до **2 кіл** автодоопрацювання) → Стратег пише зведення → статус «на твоїй перевірці» (`/review`), де власник схвалює або повертає на доопрацювання з коментарем.
+- **Виконавці** = усі активні агенти, **крім** `strategist` та `critic`.
+- **Черга** (`queue.ts`) виконує завдання послідовно у фоні, не блокуючи дашборд; джерело правди — БД, тож після рестарту бекенду незавершені завдання (`in_progress`) повертаються в чергу й підхоплюються.
+- **Таблиці:** `runs`, `tasks` (з `depends_on`, `revision_round`, токени/вартість), `events` (сповіщення + лічильник у меню), `activity_log` (журнал «хто що зробив», поле `actor`). Статуси — вільний текст (без CHECK); канонічні набори описані в `@swarm/shared`.
+- **Сповіщення:** опційний Telegram-бот (`.env`: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OWNER_CHAT_ID`) пише, коли план готовий і коли прогін завершено. Дізнатися chat_id: `npm run telegram:chat-id`. Без налаштувань рій працює без Telegram.
 
 ## Команди (root `package.json`)
 - `npm run dev` — бекенд + дашборд разом (`concurrently`)
@@ -37,7 +50,9 @@
 - `npm run typecheck` — перевірка типів усіх трьох пакетів
 - `npm run db:setup` — створити роль/базу та застосувати `schema.sql` + `seed.sql` (потрібен `PGPASSWORD` суперкористувача `postgres`)
 - `npm run db:seed` — лише оновити дані агентів (історія чатів зберігається)
+- `npm run db:migrate` — безпечна ідемпотентна міграція (`migrate.sql`): додає таблиці прогонів **без втрати даних**
 - `npm run db:reset` — перестворити базу з нуля
+- `npm run telegram:chat-id` — підказати свій Telegram chat_id для сповіщень
 
 ## Важливі правила розробки
 - **Конфігурація та безпека:** усі чутливі дані, токени та ключі зберігаються **виключно у файлі `.env`** у корені проєкту. Файл у `.gitignore` і ніколи не потрапляє до репозиторію. Шаблон — `.env.example`.

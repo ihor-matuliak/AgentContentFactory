@@ -3,6 +3,12 @@ import type {
   ChatMessage,
   ChatResponse,
   HealthResponse,
+  Run,
+  RunDetail,
+  RunSize,
+  RunSummary,
+  ReviewItem,
+  SwarmEvent,
 } from "@swarm/shared";
 
 const BACKEND_URL =
@@ -49,5 +55,56 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ message }),
     });
+  },
+
+  // ── Прогони рою (Фаза 3) ──
+
+  createRun(goal: string, size?: RunSize, maxBudgetUsd?: number): Promise<Run> {
+    return request<Run>("/api/runs", {
+      method: "POST",
+      body: JSON.stringify({ goal, size, maxBudgetUsd }),
+    });
+  },
+
+  listRuns(): Promise<RunSummary[]> {
+    return request<RunSummary[]>("/api/runs");
+  },
+
+  getRun(id: number | string): Promise<RunDetail> {
+    return request<RunDetail>(`/api/runs/${id}`);
+  },
+
+  approvePlan(id: number | string): Promise<RunDetail> {
+    return request<RunDetail>(`/api/runs/${id}/approve`, { method: "POST" });
+  },
+
+  reviewTask(
+    runId: number,
+    taskId: number,
+    decision: "approve" | "rework",
+    comment?: string,
+  ): Promise<RunDetail> {
+    return request<RunDetail>(`/api/runs/${runId}/tasks/${taskId}/review`, {
+      method: "POST",
+      body: JSON.stringify({ decision, comment }),
+    });
+  },
+
+  listReview(): Promise<ReviewItem[]> {
+    return request<ReviewItem[]>("/api/runs/review");
+  },
+
+  // ── Сповіщення ──
+
+  listEvents(): Promise<{ items: SwarmEvent[]; unread: number }> {
+    return request<{ items: SwarmEvent[]; unread: number }>("/api/events");
+  },
+
+  unreadCount(): Promise<{ unread: number }> {
+    return request<{ unread: number }>("/api/events/unread-count");
+  },
+
+  markAllEventsRead(): Promise<{ unread: number }> {
+    return request<{ unread: number }>("/api/events/read-all", { method: "POST" });
   },
 };

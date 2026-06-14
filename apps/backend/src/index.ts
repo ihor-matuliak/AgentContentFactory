@@ -3,6 +3,9 @@ import express from "express";
 import type { HealthResponse } from "@swarm/shared";
 import { env, hasClaudeCredentials } from "./env.js";
 import { agentsRouter } from "./routes/agents.js";
+import { runsRouter } from "./routes/runs.js";
+import { eventsRouter } from "./routes/events.js";
+import { resumeQueue } from "./agents/queue.js";
 
 const app = express();
 
@@ -20,6 +23,8 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.use("/api/agents", agentsRouter);
+app.use("/api/runs", runsRouter);
+app.use("/api/events", eventsRouter);
 
 app.listen(env.backendPort, () => {
   console.log(`🚀 Бекенд рою слухає на http://localhost:${env.backendPort}`);
@@ -31,4 +36,6 @@ app.listen(env.backendPort, () => {
   } else {
     console.log(`   Модель Claude: ${env.anthropicModel}`);
   }
+  // Підхоплюємо незавершені прогони після перезапуску бекенду.
+  void resumeQueue();
 });

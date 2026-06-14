@@ -98,6 +98,52 @@ export const PulseIcon = (p: SVGProps<SVGSVGElement>) => (
   </Icon>
 );
 
+export const ReviewIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M9 11l3 3L22 4" />
+    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+  </Icon>
+);
+
+export const BellIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+    <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+  </Icon>
+);
+
+export const PlusIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M12 5v14M5 12h14" />
+  </Icon>
+);
+
+export const CheckIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M5 12l5 5L20 6" />
+  </Icon>
+);
+
+export const RotateIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+    <path d="M3 3v5h5" />
+  </Icon>
+);
+
+export const CoinIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v10M9.5 9.5h3.5a1.8 1.8 0 0 1 0 3.5h-2a1.8 1.8 0 0 0 0 3.5H14" />
+  </Icon>
+);
+
+export const PlayIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M7 5l12 7-12 7z" />
+  </Icon>
+);
+
 /** Шестикутник — знак рою/вулика (логотип). */
 export const HexLogo = (p: SVGProps<SVGSVGElement>) => (
   <svg viewBox="0 0 24 24" width={22} height={22} aria-hidden="true" {...p}>
