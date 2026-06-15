@@ -7,9 +7,16 @@ import type {
   ChatResponse,
   ContentDraft,
   ContentPlanItem,
+  CreateProjectRequest,
   HealthResponse,
+  Idea,
+  IngestResult,
+  KnowledgeSearchHit,
+  KnowledgeSource,
   Platform,
+  Project,
   ProjectProfile,
+  ProjectSummary,
   Run,
   RunDetail,
   RunSize,
@@ -18,6 +25,8 @@ import type {
   SaveProfileRequest,
   SwarmEvent,
   TaskStatus,
+  TestsOverview,
+  TestScenario,
   UpdateTaskRequest,
 } from "@swarm/shared";
 
@@ -26,7 +35,6 @@ const BACKEND_URL =
 
 const PASSWORD_KEY = "swarm_password";
 
-/** Пароль доступу зберігається локально й шлеться заголовком x-swarm-password. */
 function storedPassword(): string {
   if (typeof window === "undefined") return "";
   return window.localStorage.getItem(PASSWORD_KEY) ?? "";
@@ -60,6 +68,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** Додає ?projectId=N до шляху. */
+function withProject(path: string, projectId: number): string {
+  const sep = path.includes("?") ? "&" : "?";
+  return `${path}${sep}projectId=${projectId}`;
+}
+
 export const api = {
   backendUrl: BACKEND_URL,
 
@@ -87,32 +101,57 @@ export const api = {
     return request<HealthResponse>("/api/health");
   },
 
+  // ── Проєкти (Фаза 5) ──
+
+  listProjects(): Promise<ProjectSummary[]> {
+    return request<ProjectSummary[]>("/api/projects");
+  },
+  getProject(slug: string): Promise<Project> {
+    return request<Project>(`/api/projects/${slug}`);
+  },
+  createProject(data: CreateProjectRequest): Promise<Project> {
+    return request<Project>("/api/projects", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  // ── Агенти та чати (скоуплені проєктом) ──
+
   listAgents(): Promise<AgentSummary[]> {
     return request<AgentSummary[]>("/api/agents");
   },
 
-  getHistory(slug: string): Promise<ChatMessage[]> {
-    return request<ChatMessage[]>(`/api/agents/${slug}/messages`);
+  getHistory(slug: string, projectId: number): Promise<ChatMessage[]> {
+    return request<ChatMessage[]>(withProject(`/api/agents/${slug}/messages`, projectId));
   },
 
-  sendMessage(slug: string, message: string): Promise<ChatResponse> {
+  sendMessage(slug: string, message: string, projectId: number): Promise<ChatResponse> {
     return request<ChatResponse>(`/api/agents/${slug}/chat`, {
       method: "POST",
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, projectId }),
     });
   },
 
   // ── Прогони рою ──
 
-  createRun(goal: string, size?: RunSize, maxBudgetUsd?: number): Promise<Run> {
+  createRun(projectId: number, goal: string, size?: RunSize, maxBudgetUsd?: number): Promise<Run> {
     return request<Run>("/api/runs", {
       method: "POST",
-      body: JSON.stringify({ goal, size, maxBudgetUsd }),
+      body: JSON.stringify({ projectId, goal, size, maxBudgetUsd }),
     });
   },
 
-  listRuns(): Promise<RunSummary[]> {
-    return request<RunSummary[]>("/api/runs");
+  /** Пряме (solo) завдання конкретному агенту, оминаючи планування. */
+  soloTask(projectId: number, agentSlug: string, goal: string): Promise<Run> {
+    return request<Run>("/api/runs/solo", {
+      method: "POST",
+      body: JSON.stringify({ projectId, agentSlug, goal }),
+    });
+  },
+
+  listRuns(projectId: number): Promise<RunSummary[]> {
+    return request<RunSummary[]>(withProject("/api/runs", projectId));
   },
 
   getRun(id: number | string): Promise<RunDetail> {
@@ -153,11 +192,7 @@ export const api = {
     });
   },
 
-  updateTask(
-    runId: number,
-    taskId: number,
-    patch: UpdateTaskRequest,
-  ): Promise<RunDetail> {
+  updateTask(runId: number, taskId: number, patch: UpdateTaskRequest): Promise<RunDetail> {
     return request<RunDetail>(`/api/runs/${runId}/tasks/${taskId}`, {
       method: "PATCH",
       body: JSON.stringify(patch),
@@ -169,36 +204,32 @@ export const api = {
   },
 
   deleteTask(runId: number, taskId: number): Promise<RunDetail> {
-    return request<RunDetail>(`/api/runs/${runId}/tasks/${taskId}`, {
-      method: "DELETE",
-    });
+    return request<RunDetail>(`/api/runs/${runId}/tasks/${taskId}`, { method: "DELETE" });
   },
 
-  listReview(): Promise<ReviewItem[]> {
-    return request<ReviewItem[]>("/api/runs/review");
+  listReview(projectId: number): Promise<ReviewItem[]> {
+    return request<ReviewItem[]>(withProject("/api/runs/review", projectId));
   },
 
   // ── Фабрика контенту ──
 
-  listBoard(): Promise<BoardTask[]> {
-    return request<BoardTask[]>("/api/content/board");
+  listBoard(projectId: number): Promise<BoardTask[]> {
+    return request<BoardTask[]>(withProject("/api/content/board", projectId));
   },
 
-  listDrafts(): Promise<ContentDraft[]> {
-    return request<ContentDraft[]>("/api/content/drafts");
+  listDrafts(projectId: number): Promise<ContentDraft[]> {
+    return request<ContentDraft[]>(withProject("/api/content/drafts", projectId));
   },
 
-  listPlan(): Promise<ContentPlanItem[]> {
-    return request<ContentPlanItem[]>("/api/content/plan");
+  listPlan(projectId: number): Promise<ContentPlanItem[]> {
+    return request<ContentPlanItem[]>(withProject("/api/content/plan", projectId));
   },
 
-  createPlanItem(item: {
-    title: string;
-    platform: Platform;
-    scheduledFor?: string | null;
-    notes?: string;
-  }): Promise<ContentPlanItem> {
-    return request<ContentPlanItem>("/api/content/plan", {
+  createPlanItem(
+    projectId: number,
+    item: { title: string; platform: Platform; scheduledFor?: string | null; notes?: string },
+  ): Promise<ContentPlanItem> {
+    return request<ContentPlanItem>(withProject("/api/content/plan", projectId), {
       method: "POST",
       body: JSON.stringify(item),
     });
@@ -221,35 +252,108 @@ export const api = {
   },
 
   deletePlanItem(id: number): Promise<{ ok: boolean }> {
-    return request<{ ok: boolean }>(`/api/content/plan/${id}`, {
-      method: "DELETE",
+    return request<{ ok: boolean }>(`/api/content/plan/${id}`, { method: "DELETE" });
+  },
+
+  publishToTelegram(planId: number): Promise<{ ok: boolean }> {
+    return request<{ ok: boolean }>(`/api/content-plan/${planId}/publish/telegram`, {
+      method: "POST",
     });
   },
 
-  // ── Профіль ──
+  // ── Профіль (пер-проєкт) ──
 
-  getProfile(): Promise<ProjectProfile> {
-    return request<ProjectProfile>("/api/profile");
+  getProfile(projectId: number): Promise<ProjectProfile> {
+    return request<ProjectProfile>(withProject("/api/profile", projectId));
   },
 
-  saveProfile(data: SaveProfileRequest): Promise<ProjectProfile> {
-    return request<ProjectProfile>("/api/profile", {
+  saveProfile(projectId: number, data: SaveProfileRequest): Promise<ProjectProfile> {
+    return request<ProjectProfile>(withProject("/api/profile", projectId), {
       method: "PUT",
       body: JSON.stringify(data),
     });
   },
 
-  // ── Сповіщення ──
+  // ── База знань ──
 
-  listEvents(): Promise<{ items: SwarmEvent[]; unread: number }> {
-    return request<{ items: SwarmEvent[]; unread: number }>("/api/events");
+  listKnowledge(projectId: number): Promise<KnowledgeSource[]> {
+    return request<KnowledgeSource[]>(withProject("/api/knowledge", projectId));
+  },
+  searchKnowledge(projectId: number, q: string): Promise<KnowledgeSearchHit[]> {
+    return request<KnowledgeSearchHit[]>(
+      withProject(`/api/knowledge/search?q=${encodeURIComponent(q)}`, projectId),
+    );
+  },
+  ingestText(projectId: number, text: string, title?: string): Promise<IngestResult> {
+    return request<IngestResult>(withProject("/api/knowledge/ingest", projectId), {
+      method: "POST",
+      body: JSON.stringify({ text, title }),
+    });
+  },
+  ingestDir(projectId: number, dir: string): Promise<IngestResult> {
+    return request<IngestResult>(withProject("/api/knowledge/ingest", projectId), {
+      method: "POST",
+      body: JSON.stringify({ dir }),
+    });
+  },
+  deleteKnowledge(projectId: number, id: number): Promise<{ ok: boolean }> {
+    return request<{ ok: boolean }>(withProject(`/api/knowledge/${id}`, projectId), {
+      method: "DELETE",
+    });
   },
 
-  unreadCount(): Promise<{ unread: number }> {
-    return request<{ unread: number }>("/api/events/unread-count");
+  // ── Інбокс ідей ──
+
+  listIdeas(): Promise<Idea[]> {
+    return request<Idea[]>("/api/ideas");
+  },
+  createIdea(body: string, projectId?: number | null): Promise<Idea> {
+    return request<Idea>("/api/ideas", {
+      method: "POST",
+      body: JSON.stringify({ body, projectId }),
+    });
+  },
+  convertIdea(id: number, projectId?: number): Promise<Run> {
+    return request<Run>(`/api/ideas/${id}/convert`, {
+      method: "POST",
+      body: JSON.stringify({ projectId }),
+    });
+  },
+  archiveIdea(id: number): Promise<{ ok: boolean }> {
+    return request<{ ok: boolean }>(`/api/ideas/${id}/archive`, { method: "POST" });
   },
 
-  markAllEventsRead(): Promise<{ unread: number }> {
-    return request<{ unread: number }>("/api/events/read-all", { method: "POST" });
+  // ── Фабрика тестів ──
+
+  getTests(): Promise<TestsOverview> {
+    return request<TestsOverview>("/api/tests");
+  },
+  listScenarios(): Promise<TestScenario[]> {
+    return request<TestScenario[]>("/api/tests/scenarios");
+  },
+  seedTests(): Promise<{ seeded: number }> {
+    return request<{ seeded: number }>("/api/tests/seed", { method: "POST" });
+  },
+  batchTests(limit: number): Promise<{ ran: number }> {
+    return request<{ ran: number }>("/api/tests/batch", {
+      method: "POST",
+      body: JSON.stringify({ limit }),
+    });
+  },
+
+  // ── Сповіщення (скоуплені проєктом) ──
+
+  listEvents(projectId: number): Promise<{ items: SwarmEvent[]; unread: number }> {
+    return request<{ items: SwarmEvent[]; unread: number }>(withProject("/api/events", projectId));
+  },
+
+  unreadCount(projectId: number): Promise<{ unread: number }> {
+    return request<{ unread: number }>(withProject("/api/events/unread-count", projectId));
+  },
+
+  markAllEventsRead(projectId: number): Promise<{ unread: number }> {
+    return request<{ unread: number }>(withProject("/api/events/read-all", projectId), {
+      method: "POST",
+    });
   },
 };

@@ -24,6 +24,7 @@ export function detectPlatform(text: string): Platform {
 
 interface DraftRow {
   id: number;
+  project_id: number;
   run_id: number | null;
   task_id: number | null;
   agent_slug: string;
@@ -38,6 +39,7 @@ interface DraftRow {
 function mapDraft(row: DraftRow): ContentDraft {
   return {
     id: row.id,
+    projectId: row.project_id,
     runId: row.run_id,
     taskId: row.task_id,
     agentSlug: row.agent_slug,
@@ -51,6 +53,7 @@ function mapDraft(row: DraftRow): ContentDraft {
 }
 
 export async function createDraft(input: {
+  projectId: number;
   runId: number | null;
   taskId: number | null;
   agentSlug: string;
@@ -59,9 +62,10 @@ export async function createDraft(input: {
   body: string;
 }): Promise<ContentDraft> {
   const { rows } = await query<DraftRow>(
-    `INSERT INTO content_drafts (run_id, task_id, agent_slug, platform, title, body)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    `INSERT INTO content_drafts (project_id, run_id, task_id, agent_slug, platform, title, body)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
     [
+      input.projectId,
       input.runId,
       input.taskId,
       input.agentSlug,
@@ -73,9 +77,10 @@ export async function createDraft(input: {
   return mapDraft(rows[0]);
 }
 
-export async function listDrafts(): Promise<ContentDraft[]> {
+export async function listDrafts(projectId: number): Promise<ContentDraft[]> {
   const { rows } = await query<DraftRow>(
-    "SELECT * FROM content_drafts ORDER BY id DESC",
+    "SELECT * FROM content_drafts WHERE project_id = $1 ORDER BY id DESC",
+    [projectId],
   );
   return rows.map(mapDraft);
 }
@@ -84,6 +89,7 @@ export async function listDrafts(): Promise<ContentDraft[]> {
 
 interface PlanRow {
   id: number;
+  project_id: number;
   draft_id: number | null;
   run_id: number | null;
   platform: string;
@@ -114,6 +120,7 @@ function normalizeSchedule(value: string | null | undefined): string | null {
 function mapPlan(row: PlanRow): ContentPlanItem {
   return {
     id: row.id,
+    projectId: row.project_id,
     draftId: row.draft_id,
     runId: row.run_id,
     platform: row.platform as Platform,
@@ -127,6 +134,7 @@ function mapPlan(row: PlanRow): ContentPlanItem {
 }
 
 export async function createPlanItem(input: {
+  projectId: number;
   draftId: number | null;
   runId: number | null;
   platform: Platform;
@@ -135,9 +143,10 @@ export async function createPlanItem(input: {
   scheduledFor?: string | null;
 }): Promise<ContentPlanItem> {
   const { rows } = await query<PlanRow>(
-    `INSERT INTO content_plan (draft_id, run_id, platform, title, notes, scheduled_for)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    `INSERT INTO content_plan (project_id, draft_id, run_id, platform, title, notes, scheduled_for)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
     [
+      input.projectId,
       input.draftId,
       input.runId,
       input.platform,
@@ -149,11 +158,27 @@ export async function createPlanItem(input: {
   return mapPlan(rows[0]);
 }
 
-export async function listPlan(): Promise<ContentPlanItem[]> {
+export async function listPlan(projectId: number): Promise<ContentPlanItem[]> {
   const { rows } = await query<PlanRow>(
-    "SELECT * FROM content_plan ORDER BY scheduled_for NULLS LAST, id DESC",
+    "SELECT * FROM content_plan WHERE project_id = $1 ORDER BY scheduled_for NULLS LAST, id DESC",
+    [projectId],
   );
   return rows.map(mapPlan);
+}
+
+/** Один запис контент-плану за id (для публікації). */
+export async function getPlanItem(id: number): Promise<ContentPlanItem | null> {
+  const { rows } = await query<PlanRow>("SELECT * FROM content_plan WHERE id = $1", [id]);
+  return rows[0] ? mapPlan(rows[0]) : null;
+}
+
+/** Тіло чернетки за id (для публікації повного тексту). */
+export async function getDraftBody(id: number): Promise<string> {
+  const { rows } = await query<{ body: string }>(
+    "SELECT body FROM content_drafts WHERE id = $1",
+    [id],
+  );
+  return rows[0]?.body ?? "";
 }
 
 export async function updatePlanItem(
@@ -202,6 +227,7 @@ export async function deletePlanItem(id: number): Promise<void> {
  */
 export async function draftFromApprovedTask(
   task: RunTask,
+  projectId: number,
 ): Promise<ContentDraft | null> {
   const platform = detectPlatform(`${task.description} ${task.result}`);
   // Публікаційним вважаємо завдання Публікатора, будь-яке з упізнаваним
@@ -215,6 +241,7 @@ export async function draftFromApprovedTask(
   if (!isPublication || !task.result.trim()) return null;
   const title = task.description.slice(0, 120);
   const draft = await createDraft({
+    projectId,
     runId: task.runId,
     taskId: task.id,
     agentSlug: task.agentSlug,
@@ -223,6 +250,7 @@ export async function draftFromApprovedTask(
     body: task.result,
   });
   await createPlanItem({
+    projectId,
     draftId: draft.id,
     runId: task.runId,
     platform,

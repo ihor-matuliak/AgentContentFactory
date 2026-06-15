@@ -52,6 +52,7 @@ export async function listActivity(runId: number): Promise<ActivityEntry[]> {
 interface EventRow {
   id: number;
   run_id: number | null;
+  project_id: number | null;
   type: string;
   title: string;
   body: string;
@@ -63,6 +64,7 @@ function mapEvent(row: EventRow): SwarmEvent {
   return {
     id: row.id,
     runId: row.run_id,
+    projectId: row.project_id,
     type: row.type as SwarmEventType,
     title: row.title,
     body: row.body,
@@ -71,31 +73,44 @@ function mapEvent(row: EventRow): SwarmEvent {
   };
 }
 
-/** Створює сповіщення для власника (підсвічується лічильником у меню). */
+/**
+ * Створює сповіщення для власника (підсвічується лічильником у меню).
+ * Якщо projectId не задано, але є runId — визначаємо проєкт за прогоном.
+ */
 export async function addEvent(
   type: SwarmEventType,
   title: string,
   body = "",
   runId: number | null = null,
+  projectId?: number | null,
 ): Promise<SwarmEvent> {
+  let pid = projectId ?? null;
+  if (pid === null && runId !== null) {
+    const { rows } = await query<{ project_id: number | null }>(
+      "SELECT project_id FROM runs WHERE id = $1",
+      [runId],
+    );
+    pid = rows[0]?.project_id ?? null;
+  }
   const { rows } = await query<EventRow>(
-    "INSERT INTO events (run_id, type, title, body) VALUES ($1, $2, $3, $4) RETURNING *",
-    [runId, type, title, body.slice(0, 2000)],
+    "INSERT INTO events (run_id, project_id, type, title, body) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+    [runId, pid, type, title, body.slice(0, 2000)],
   );
   return mapEvent(rows[0]);
 }
 
-export async function listEvents(limit = 50): Promise<SwarmEvent[]> {
+export async function listEvents(projectId: number, limit = 50): Promise<SwarmEvent[]> {
   const { rows } = await query<EventRow>(
-    "SELECT * FROM events ORDER BY id DESC LIMIT $1",
-    [limit],
+    "SELECT * FROM events WHERE project_id = $1 ORDER BY id DESC LIMIT $2",
+    [projectId, limit],
   );
   return rows.map(mapEvent);
 }
 
-export async function unreadEventCount(): Promise<number> {
+export async function unreadEventCount(projectId: number): Promise<number> {
   const { rows } = await query<{ count: string }>(
-    "SELECT COUNT(*)::int AS count FROM events WHERE is_read = FALSE",
+    "SELECT COUNT(*)::int AS count FROM events WHERE is_read = FALSE AND project_id = $1",
+    [projectId],
   );
   return Number(rows[0]?.count ?? 0);
 }
@@ -104,6 +119,9 @@ export async function markEventRead(id: number): Promise<void> {
   await query("UPDATE events SET is_read = TRUE WHERE id = $1", [id]);
 }
 
-export async function markAllEventsRead(): Promise<void> {
-  await query("UPDATE events SET is_read = TRUE WHERE is_read = FALSE");
+export async function markAllEventsRead(projectId: number): Promise<void> {
+  await query(
+    "UPDATE events SET is_read = TRUE WHERE is_read = FALSE AND project_id = $1",
+    [projectId],
+  );
 }

@@ -22,7 +22,10 @@
     "db:migrate": "bash ./db/migrate.sh",
     "db:reset": "bash ./db/reset.sh",
     "db:backup": "bash ./db/backup.sh",
-    "telegram:chat-id": "tsx apps/backend/src/scripts/telegram-chat-id.ts"
+    "telegram:chat-id": "tsx apps/backend/src/scripts/telegram-chat-id.ts",
+    "knowledge:ingest": "tsx apps/backend/src/scripts/knowledge-ingest.ts",
+    "tests:seed": "tsx apps/backend/src/scripts/tests-seed.ts",
+    "tests:batch": "tsx apps/backend/src/scripts/tests-batch.ts"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

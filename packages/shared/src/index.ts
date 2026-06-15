@@ -31,6 +31,8 @@ export type AgentSummary = Omit<Agent, "systemPrompt">;
 export interface ChatMessage {
   id: number;
   agentId: number;
+  /** Проєкт, у контексті якого ведеться чат (Фаза 5). */
+  projectId: number;
   role: ChatRole;
   content: string;
   /** ISO-рядок дати створення. */
@@ -120,6 +122,8 @@ export type SwarmEventType =
 /** Прогін рою (рядок таблиці `runs`). */
 export interface Run {
   id: number;
+  /** Проєкт, до якого належить прогін (Фаза 5). */
+  projectId: number;
   goal: string;
   size: RunSize;
   status: RunStatus;
@@ -175,6 +179,8 @@ export interface RunTask {
 export interface SwarmEvent {
   id: number;
   runId: number | null;
+  /** Проєкт, до якого належить подія (Фаза 5; може бути null). */
+  projectId: number | null;
   type: SwarmEventType;
   title: string;
   body: string;
@@ -214,10 +220,23 @@ export interface ReviewItem {
 
 /** Тіло запиту POST /api/runs — створити прогін. */
 export interface CreateRunRequest {
+  /** Проєкт, у якому створюється прогін (Фаза 5). */
+  projectId: number;
   goal: string;
   /** Якщо не задано — розмір визначає Стратег під час планування. */
   size?: RunSize;
   /** Необов'язковий ліміт витрат на прогін, USD. */
+  maxBudgetUsd?: number;
+}
+
+/**
+ * Тіло запиту POST /api/runs/solo — пряме (solo) завдання конкретному агенту,
+ * оминаючи планування Стратега (Фаза 5).
+ */
+export interface SoloTaskRequest {
+  projectId: number;
+  agentSlug: string;
+  goal: string;
   maxBudgetUsd?: number;
 }
 
@@ -232,7 +251,7 @@ export interface ReviewDecisionRequest {
 /** Майданчик публікації. */
 export type Platform = "youtube" | "telegram" | "instagram" | "other";
 
-/** Профіль проєкту — єдиний бренд-контекст (рядок таблиці `project_profile`). */
+/** Профіль проєкту — бренд-контекст ПЕР-ПРОЄКТ (рядок таблиці `project_profiles`). */
 export interface ProjectProfile {
   /** Чим займається бізнес. */
   business: string;
@@ -246,6 +265,8 @@ export interface ProjectProfile {
   taboos: string;
   /** Приклади вдалого контенту/формулювань. */
   examples: string;
+  /** chat_id Telegram-каналу проєкту для публікацій (Фаза 5). */
+  telegramChannel: string;
   updatedAt: string;
 }
 
@@ -258,6 +279,8 @@ export type DraftStatus = "draft" | "scheduled" | "published";
 /** Чернетка контенту (рядок таблиці `content_drafts`). */
 export interface ContentDraft {
   id: number;
+  /** Проєкт, до якого належить чернетка (Фаза 5). */
+  projectId: number;
   runId: number | null;
   taskId: number | null;
   agentSlug: string;
@@ -275,6 +298,8 @@ export type ContentPlanStatus = "planned" | "published";
 /** Елемент контент-плану (рядок таблиці `content_plan`). */
 export interface ContentPlanItem {
   id: number;
+  /** Проєкт, до якого належить запис (Фаза 5). */
+  projectId: number;
   draftId: number | null;
   runId: number | null;
   platform: Platform;
@@ -320,4 +345,169 @@ export interface AuthStatusResponse {
 /** Тіло запиту POST /api/auth/login. */
 export interface LoginRequest {
   password: string;
+}
+
+// ════════════════════════════ Фаза 5: мультипроєкти ═══════════════════════════
+
+/** Проєкт — окремий канал/бренд власника (рядок таблиці `projects`). */
+export interface Project {
+  id: number;
+  /** Унікальний машинний ідентифікатор у URL, напр. "ai-proryv". */
+  slug: string;
+  name: string;
+  description: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Проєкт у списку разом із короткою статистикою. */
+export interface ProjectSummary extends Project {
+  runs: number;
+  drafts: number;
+  knowledgeSources: number;
+}
+
+/** Тіло запиту POST /api/projects — створити проєкт. */
+export interface CreateProjectRequest {
+  name: string;
+  /** Якщо не задано — генерується зі slug назви. */
+  slug?: string;
+  description?: string;
+}
+
+// ──────────────────────────────── База знань ─────────────────────────────────
+
+/** Тип джерела знань. */
+export type KnowledgeKind = "note" | "file" | "reference";
+
+/** Джерело знань проєкту (рядок таблиці `knowledge_sources`). */
+export interface KnowledgeSource {
+  id: number;
+  projectId: number;
+  title: string;
+  kind: KnowledgeKind;
+  /** Шлях до файлу або URL посилання. */
+  path: string;
+  bytes: number;
+  chunkCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Шматок (чанк) знань для повнотекстового пошуку (рядок `knowledge_chunks`). */
+export interface KnowledgeChunk {
+  id: number;
+  sourceId: number;
+  projectId: number;
+  ordinal: number;
+  content: string;
+  createdAt: string;
+}
+
+/** Знахідка повнотекстового пошуку по базі знань. */
+export interface KnowledgeSearchHit {
+  chunkId: number;
+  sourceId: number;
+  sourceTitle: string;
+  content: string;
+  rank: number;
+}
+
+/** Тіло запиту POST /api/knowledge/ingest. */
+export interface IngestRequest {
+  /** Тека з матеріалами (для CLI/сервера). */
+  dir?: string;
+  /** Або текст нотатки напряму. */
+  text?: string;
+  title?: string;
+}
+
+/** Результат інгесту бази знань. */
+export interface IngestResult {
+  sources: number;
+  chunks: number;
+}
+
+// ──────────────────────────────── Фабрика тестів ─────────────────────────────
+
+/** Вердикт тесту. */
+export type TestVerdict = "" | "pass" | "fail";
+
+/** Тестовий сценарій для агента (рядок таблиці `test_scenarios`). */
+export interface TestScenario {
+  id: number;
+  agentSlug: string;
+  title: string;
+  prompt: string;
+  /** Критерії якісного виконання для Критика. */
+  rubric: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
+/** Результат прогону тесту (рядок таблиці `test_runs`). */
+export interface TestRun {
+  id: number;
+  scenarioId: number;
+  agentSlug: string;
+  verdict: TestVerdict;
+  score: number | null;
+  comment: string;
+  answer: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  durationMs: number;
+  createdAt: string;
+  /** Назва сценарію (join для UI). */
+  scenarioTitle?: string;
+}
+
+/** Зведення якості по одному агенту. */
+export interface TestAgentSummary {
+  agentSlug: string;
+  agentName: string;
+  total: number;
+  passed: number;
+  failed: number;
+  /** Частка пройдених (0..1). */
+  passRate: number;
+  costUsd: number;
+  avgDurationMs: number;
+}
+
+/** Відповідь GET /api/tests — зведення фабрики тестів. */
+export interface TestsOverview {
+  scenarios: number;
+  totalRuns: number;
+  passRate: number;
+  costUsd: number;
+  byAgent: TestAgentSummary[];
+  recent: TestRun[];
+}
+
+// ──────────────────────────────── Інбокс ідей ────────────────────────────────
+
+export type IdeaStatus = "new" | "converted" | "archived";
+export type IdeaSource = "dashboard" | "telegram";
+
+/** Ідея з інбокса (рядок таблиці `idea_inbox`). */
+export interface Idea {
+  id: number;
+  projectId: number | null;
+  body: string;
+  source: IdeaSource;
+  status: IdeaStatus;
+  runId: number | null;
+  createdAt: string;
+  /** Назва проєкту (join для UI). */
+  projectName?: string;
+}
+
+/** Тіло запиту POST /api/ideas — додати ідею. */
+export interface CreateIdeaRequest {
+  body: string;
+  projectId?: number | null;
+  source?: IdeaSource;
 }

@@ -9,6 +9,7 @@ export type ChatHandler = (
   agent: Agent,
   history: ChatMessage[],
   userMessage: string,
+  projectId: number,
 ) => Promise<string>;
 
 /**
@@ -17,8 +18,8 @@ export type ChatHandler = (
  * Особистість («характер») кожного агента береться з його системного промпту
  * в базі (db/seed.sql) — тут жодних захардкоджених характерів немає.
  */
-const conversationalHandler: ChatHandler = (agent, history, userMessage) =>
-  generateAgentReply(agent, history, userMessage);
+const conversationalHandler: ChatHandler = (agent, history, userMessage, projectId) =>
+  generateAgentReply(agent, history, userMessage, projectId);
 
 /**
  * Реєстр чату: зіставляє slug агента з обробником.

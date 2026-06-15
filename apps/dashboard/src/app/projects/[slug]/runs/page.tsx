@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import type { RunSummary } from "@swarm/shared";
 import { api } from "@/lib/api";
+import { useProject } from "@/components/ProjectContext";
 import { PageHeader, ProgressBar, RunStatusBadge } from "@/components/ui";
 import { PlayIcon, SparkIcon } from "@/components/icons";
 
@@ -18,6 +19,8 @@ function timeAgo(iso: string): string {
 }
 
 export default function RunsPage() {
+  const project = useProject();
+  const base = `/projects/${project.slug}`;
   const router = useRouter();
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -29,8 +32,7 @@ export default function RunsPage() {
 
   async function refresh() {
     try {
-      const list = await api.listRuns();
-      setRuns(list);
+      setRuns(await api.listRuns(project.id));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Не вдалося завантажити прогони");
     } finally {
@@ -42,7 +44,8 @@ export default function RunsPage() {
     void refresh();
     const t = setInterval(refresh, 5000);
     return () => clearInterval(t);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id]);
 
   async function handleLaunch(e: FormEvent) {
     e.preventDefault();
@@ -53,11 +56,12 @@ export default function RunsPage() {
     try {
       const budgetUsd = Number(budget);
       const run = await api.createRun(
+        project.id,
         text,
         bigRun ? "large" : undefined,
         budget.trim() && budgetUsd > 0 ? budgetUsd : undefined,
       );
-      router.push(`/runs/${run.id}`);
+      router.push(`${base}/runs/${run.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не вдалося запустити прогін");
       setSubmitting(false);
@@ -72,7 +76,6 @@ export default function RunsPage() {
       />
 
       <div className="space-y-8 px-6 py-7 md:px-10">
-        {/* Композер нової цілі */}
         <form
           onSubmit={handleLaunch}
           className="rounded-[var(--radius-card)] border border-[var(--color-honey)]/25 bg-gradient-to-br from-[var(--color-honey)]/[0.07] to-transparent p-5"
@@ -91,12 +94,7 @@ export default function RunsPage() {
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-4">
               <label className="flex cursor-pointer items-center gap-2 text-[13px] text-[var(--color-fg-muted)]">
-                <input
-                  type="checkbox"
-                  checked={bigRun}
-                  onChange={(e) => setBigRun(e.target.checked)}
-                  className="h-4 w-4 accent-[var(--color-honey)]"
-                />
+                <input type="checkbox" checked={bigRun} onChange={(e) => setBigRun(e.target.checked)} className="h-4 w-4 accent-[var(--color-honey)]" />
                 Великий прогін — спершу показати план на схвалення
               </label>
               <label className="flex items-center gap-2 text-[13px] text-[var(--color-fg-muted)]">
@@ -121,15 +119,9 @@ export default function RunsPage() {
               {submitting ? "Запускаю…" : "Запустити прогін"}
             </button>
           </div>
-          <p className="mt-2 text-[12px] text-[var(--color-fg-subtle)]">
-            Дрібний прогін стартує одразу. Великий — стане на паузу з планом, доки ти його не запустиш.
-          </p>
-          {error && (
-            <p className="mt-2 text-[13px] text-[var(--color-danger)]">{error}</p>
-          )}
+          {error && <p className="mt-2 text-[13px] text-[var(--color-danger)]">{error}</p>}
         </form>
 
-        {/* Список прогонів */}
         <section>
           <h2 className="mb-3 text-[12px] font-medium uppercase tracking-[0.16em] text-[var(--color-fg-subtle)]">
             Усі прогони {loaded && `· ${runs.length}`}
@@ -137,34 +129,26 @@ export default function RunsPage() {
 
           {loaded && runs.length === 0 && (
             <div className="rounded-[var(--radius-card)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-12 text-center">
-              <p className="text-[14px] text-[var(--color-fg-muted)]">
-                Прогонів ще немає. Постав рою першу ціль вище ↑
-              </p>
+              <p className="text-[14px] text-[var(--color-fg-muted)]">Прогонів ще немає. Постав рою першу ціль вище ↑</p>
             </div>
           )}
 
           <div className="space-y-3">
-            {!loaded &&
-              [0, 1, 2].map((i) => (
-                <div
-                  key={i}
-                  className="h-[92px] animate-pulse rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]"
-                />
-              ))}
+            {!loaded && [0, 1, 2].map((i) => (
+              <div key={i} className="h-[92px] animate-pulse rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]" />
+            ))}
 
             {loaded &&
               runs.map((r) => (
                 <Link
                   key={r.id}
-                  href={`/runs/${r.id}`}
+                  href={`${base}/runs/${r.id}`}
                   className="group block rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 transition-all hover:border-[var(--color-honey)]/40 hover:bg-[var(--color-surface-2)]"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2.5">
-                        <span className="font-mono text-[12px] text-[var(--color-fg-subtle)]">
-                          #{r.id}
-                        </span>
+                        <span className="font-mono text-[12px] text-[var(--color-fg-subtle)]">#{r.id}</span>
                         <RunStatusBadge status={r.status} />
                       </div>
                       <p className="mt-2 line-clamp-2 text-[15px] font-medium text-[var(--color-fg)] group-hover:text-[var(--color-honey-bright)]">
@@ -172,13 +156,9 @@ export default function RunsPage() {
                       </p>
                     </div>
                     <div className="shrink-0 text-right">
-                      <div className="font-mono text-[11px] text-[var(--color-fg-subtle)]">
-                        {timeAgo(r.createdAt)}
-                      </div>
+                      <div className="font-mono text-[11px] text-[var(--color-fg-subtle)]">{timeAgo(r.createdAt)}</div>
                       {r.costUsd > 0 && (
-                        <div className="mt-1 font-mono text-[11px] tabular text-[var(--color-fg-faint)]">
-                          ${r.costUsd.toFixed(3)}
-                        </div>
+                        <div className="mt-1 font-mono text-[11px] tabular text-[var(--color-fg-faint)]">${r.costUsd.toFixed(3)}</div>
                       )}
                     </div>
                   </div>

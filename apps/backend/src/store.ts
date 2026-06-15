@@ -17,6 +17,7 @@ import { mapActivity } from "./journal.js";
 
 interface RunRow {
   id: number;
+  project_id: number;
   goal: string;
   status: string;
   size: string;
@@ -58,6 +59,7 @@ interface TaskRow {
 function mapRun(row: RunRow): Run {
   return {
     id: row.id,
+    projectId: row.project_id,
     goal: row.goal,
     status: row.status as RunStatus,
     size: row.size as RunSize,
@@ -100,15 +102,16 @@ export function mapTask(row: TaskRow): RunTask {
 // ──────────────────────────────── Прогони ────────────────────────────────────
 
 export async function createRun(
+  projectId: number,
   goal: string,
   size: RunSize,
   status: RunStatus,
   maxBudgetUsd: number | null,
 ): Promise<Run> {
   const { rows } = await query<RunRow>(
-    `INSERT INTO runs (goal, size, status, max_budget_usd)
-     VALUES ($1, $2, $3, $4) RETURNING *`,
-    [goal, size, status, maxBudgetUsd],
+    `INSERT INTO runs (project_id, goal, size, status, max_budget_usd)
+     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    [projectId, goal, size, status, maxBudgetUsd],
   );
   return mapRun(rows[0]);
 }
@@ -118,15 +121,17 @@ export async function getRun(id: number): Promise<Run | null> {
   return rows[0] ? mapRun(rows[0]) : null;
 }
 
-export async function listRuns(): Promise<RunSummary[]> {
+export async function listRuns(projectId: number): Promise<RunSummary[]> {
   const { rows } = await query<RunRow & { total_tasks: string; done_tasks: string }>(
     `SELECT r.*,
             COUNT(t.id)                              AS total_tasks,
             COUNT(t.id) FILTER (WHERE t.status = 'done') AS done_tasks
      FROM runs r
      LEFT JOIN tasks t ON t.run_id = r.id
+     WHERE r.project_id = $1
      GROUP BY r.id
      ORDER BY r.id DESC`,
+    [projectId],
   );
   return rows.map((row) => ({
     ...mapRun(row),
@@ -326,14 +331,15 @@ export async function runTasksSettled(runId: number): Promise<boolean> {
 }
 
 /** Черга «На перевірці»: результати готових завдань у прогонах awaiting_review. */
-export async function listReviewQueue(): Promise<ReviewItem[]> {
+export async function listReviewQueue(projectId: number): Promise<ReviewItem[]> {
   const { rows } = await query<TaskRow>(
     `SELECT t.*, a.name AS agent_name
      FROM tasks t
      JOIN runs r ON r.id = t.run_id
      LEFT JOIN agents a ON a.slug = t.agent_slug
-     WHERE r.status = 'awaiting_review' AND t.status = 'done'
+     WHERE r.project_id = $1 AND r.status = 'awaiting_review' AND t.status = 'done'
      ORDER BY r.id DESC, t.sort_order ASC`,
+    [projectId],
   );
   const runCache = new Map<number, Run>();
   const items: ReviewItem[] = [];
@@ -437,7 +443,7 @@ export async function addTaskToRun(input: {
 }
 
 /** Усі завдання рою для дошки «Задачі» (із ціллю та статусом прогону). */
-export async function listBoardTasks(): Promise<BoardTask[]> {
+export async function listBoardTasks(projectId: number): Promise<BoardTask[]> {
   const { rows } = await query<
     TaskRow & { run_goal: string; run_status: string }
   >(
@@ -445,7 +451,9 @@ export async function listBoardTasks(): Promise<BoardTask[]> {
      FROM tasks t
      JOIN runs r ON r.id = t.run_id
      LEFT JOIN agents a ON a.slug = t.agent_slug
+     WHERE r.project_id = $1
      ORDER BY t.updated_at DESC, t.id DESC`,
+    [projectId],
   );
   return rows.map((row) => ({
     ...mapTask(row),

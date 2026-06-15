@@ -5,14 +5,10 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActivityEntry, AgentSummary, RunDetail, RunTask } from "@swarm/shared";
 import { api } from "@/lib/api";
+import { useProject } from "@/components/ProjectContext";
 import { Markdown } from "@/components/Markdown";
 import { CopyButton } from "@/components/CopyButton";
-import {
-  AgentBadge,
-  ProgressBar,
-  RunStatusBadge,
-  TaskStatusBadge,
-} from "@/components/ui";
+import { AgentBadge, ProgressBar, RunStatusBadge, TaskStatusBadge } from "@/components/ui";
 import {
   ArrowLeftIcon,
   CoinIcon,
@@ -25,17 +21,16 @@ import {
 } from "@/components/icons";
 
 function timeShort(iso: string): string {
-  return new Date(iso).toLocaleTimeString("uk-UA", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return new Date(iso).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
 }
 
 const ACTIVE_STATES = new Set(["planning", "running"]);
 
 export default function RunDetailPage() {
-  const params = useParams<{ slug: string }>();
-  const id = params.slug;
+  const project = useProject();
+  const base = `/projects/${project.slug}`;
+  const params = useParams<{ id: string }>();
+  const id = params.id;
   const router = useRouter();
 
   const [data, setData] = useState<RunDetail | null>(null);
@@ -63,10 +58,7 @@ export default function RunDetailPage() {
     return () => clearInterval(t);
   }, [refresh]);
 
-  // Виконавці = усі активні агенти, крім Стратега та Критика.
-  const executors = agents.filter(
-    (a) => a.isActive && a.slug !== "strategist" && a.slug !== "critic",
-  );
+  const executors = agents.filter((a) => a.isActive && a.slug !== "strategist" && a.slug !== "critic");
 
   async function handleApprove() {
     setApproving(true);
@@ -83,7 +75,7 @@ export default function RunDetailPage() {
     setRepeating(true);
     try {
       const run = await api.repeatRun(id);
-      router.push(`/runs/${run.id}`);
+      router.push(`${base}/runs/${run.id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Не вдалося повторити прогін");
       setRepeating(false);
@@ -110,9 +102,7 @@ export default function RunDetailPage() {
   if (error && !data) {
     return (
       <div className="px-6 py-10 md:px-10">
-        <Link href="/runs" className="text-[13px] text-[var(--color-honey)]">
-          ← До прогонів
-        </Link>
+        <Link href={`${base}/runs`} className="text-[13px] text-[var(--color-honey)]">← До прогонів</Link>
         <p className="mt-4 text-[14px] text-[var(--color-danger)]">{error}</p>
       </div>
     );
@@ -134,13 +124,9 @@ export default function RunDetailPage() {
 
   return (
     <div className="px-6 py-7 md:px-10">
-      {/* Хлібні крихти + дії */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-[12px] text-[var(--color-fg-subtle)]">
-          <Link
-            href="/runs"
-            className="inline-flex items-center gap-1 hover:text-[var(--color-fg)]"
-          >
+          <Link href={`${base}/runs`} className="inline-flex items-center gap-1 hover:text-[var(--color-fg)]">
             <ArrowLeftIcon width={14} height={14} /> Прогони рою
           </Link>
           <span>/</span>
@@ -158,20 +144,16 @@ export default function RunDetailPage() {
 
       <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <h1 className="font-display text-[22px] font-semibold leading-snug tracking-tight md:text-[26px]">
-            {run.goal}
-          </h1>
+          <h1 className="font-display text-[22px] font-semibold leading-snug tracking-tight md:text-[26px]">{run.goal}</h1>
           <div className="mt-2 flex items-center gap-3">
             <RunStatusBadge status={run.status} />
             {isActive && (
               <span className="inline-flex items-center gap-1.5 text-[12px] text-[var(--color-fg-subtle)]">
-                <span className="h-1.5 w-1.5 animate-ping rounded-full bg-[var(--color-honey)]" />
-                рій працює…
+                <span className="h-1.5 w-1.5 animate-ping rounded-full bg-[var(--color-honey)]" /> рій працює…
               </span>
             )}
           </div>
         </div>
-        {/* Телеметрія витрат */}
         <div className="flex items-center gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5">
           <div className="text-right">
             <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-[var(--color-fg-subtle)]">
@@ -179,19 +161,12 @@ export default function RunDetailPage() {
             </div>
             <div className="font-mono text-[15px] tabular text-[var(--color-honey)]">
               ${run.costUsd.toFixed(3)}
-              {run.maxBudgetUsd != null && (
-                <span className="text-[var(--color-fg-subtle)]">
-                  {" "}
-                  / ${run.maxBudgetUsd.toFixed(2)}
-                </span>
-              )}
+              {run.maxBudgetUsd != null && <span className="text-[var(--color-fg-subtle)]"> / ${run.maxBudgetUsd.toFixed(2)}</span>}
             </div>
           </div>
           <div className="h-8 w-px bg-[var(--color-border)]" />
           <div className="text-right">
-            <div className="text-[11px] uppercase tracking-wide text-[var(--color-fg-subtle)]">
-              токени
-            </div>
+            <div className="text-[11px] uppercase tracking-wide text-[var(--color-fg-subtle)]">токени</div>
             <div className="font-mono text-[15px] tabular text-[var(--color-fg-muted)]">
               {(run.inputTokens + run.outputTokens).toLocaleString("uk-UA")}
             </div>
@@ -199,7 +174,6 @@ export default function RunDetailPage() {
         </div>
       </div>
 
-      {/* Бюджетна смужка */}
       {run.maxBudgetUsd != null && run.maxBudgetUsd > 0 && (
         <div className="mt-4 flex items-center gap-3">
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--color-surface-2)]">
@@ -207,10 +181,7 @@ export default function RunDetailPage() {
               className="h-full rounded-full transition-all"
               style={{
                 width: `${Math.min(100, (run.costUsd / run.maxBudgetUsd) * 100)}%`,
-                backgroundColor:
-                  run.costUsd >= run.maxBudgetUsd
-                    ? "var(--color-danger)"
-                    : "var(--color-honey)",
+                backgroundColor: run.costUsd >= run.maxBudgetUsd ? "var(--color-danger)" : "var(--color-honey)",
               }}
             />
           </div>
@@ -220,22 +191,17 @@ export default function RunDetailPage() {
         </div>
       )}
 
-      {/* Помилка прогону */}
       {run.status === "failed" && run.error && (
         <div className="mt-5 rounded-xl border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 px-4 py-3 text-[13px] text-[var(--color-danger)]">
           {run.error}
         </div>
       )}
 
-      {/* Схвалення плану */}
       {editable && (
         <div className="mt-5 rounded-[var(--radius-card)] border border-[var(--color-honey)]/30 bg-gradient-to-br from-[var(--color-honey)]/[0.08] to-transparent p-5">
-          <h2 className="font-display text-[16px] font-semibold">
-            Стратег склав план — переглянь і за потреби відредагуй
-          </h2>
+          <h2 className="font-display text-[16px] font-semibold">Стратег склав план — переглянь і за потреби відредагуй</h2>
           <p className="mt-1 text-[13px] text-[var(--color-fg-muted)]">
-            Зміни опис чи виконавця завдань, додай або видали кроки. Коли план
-            влаштовує — натисни «Запустити рій».
+            Зміни опис чи виконавця завдань, додай або видали кроки. Коли план влаштовує — натисни «Запустити рій».
           </p>
           <button
             onClick={handleApprove}
@@ -249,12 +215,9 @@ export default function RunDetailPage() {
       )}
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Дошка завдань */}
         <section className="lg:col-span-2 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="font-display text-[15px] font-semibold">
-              Завдання · {tasks.length}
-            </h2>
+            <h2 className="font-display text-[15px] font-semibold">Завдання · {tasks.length}</h2>
             <div className="w-40">
               <ProgressBar done={done} total={tasks.length} />
             </div>
@@ -262,21 +225,12 @@ export default function RunDetailPage() {
 
           {tasks.length === 0 && (
             <p className="rounded-[var(--radius-card)] border border-dashed border-[var(--color-border)] px-5 py-8 text-center text-[13px] text-[var(--color-fg-muted)]">
-              {run.status === "planning"
-                ? "Стратег розкладає ціль на завдання…"
-                : "Завдань немає."}
+              {run.status === "planning" ? "Стратег розкладає ціль на завдання…" : "Завдань немає."}
             </p>
           )}
 
           {tasks.map((t) => (
-            <TaskCard
-              key={t.id}
-              task={t}
-              runId={run.id}
-              editable={editable}
-              executors={executors}
-              onMutate={setData}
-            />
+            <TaskCard key={t.id} task={t} runId={run.id} editable={editable} executors={executors} onMutate={setData} />
           ))}
 
           {editable && executors.length > 0 && (
@@ -289,13 +243,10 @@ export default function RunDetailPage() {
             </button>
           )}
 
-          {/* Підсумкове зведення */}
           {run.summary && (
             <div className="rounded-[var(--radius-card)] border border-[var(--color-honey)]/25 bg-[var(--color-surface)] p-5">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <h3 className="flex items-center gap-2 font-display text-[15px] font-semibold text-[var(--color-honey)]">
-                  Зведення від Стратега
-                </h3>
+                <h3 className="flex items-center gap-2 font-display text-[15px] font-semibold text-[var(--color-honey)]">Зведення від Стратега</h3>
                 <CopyButton text={run.summary} />
               </div>
               <Markdown>{run.summary}</Markdown>
@@ -303,14 +254,11 @@ export default function RunDetailPage() {
           )}
         </section>
 
-        {/* Журнал роботи рою */}
         <section className="lg:col-span-1">
           <h2 className="mb-3 font-display text-[15px] font-semibold">Журнал рою</h2>
           <div className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
             {activity.length === 0 ? (
-              <p className="px-4 py-6 text-center text-[13px] text-[var(--color-fg-muted)]">
-                Поки порожньо.
-              </p>
+              <p className="px-4 py-6 text-center text-[13px] text-[var(--color-fg-muted)]">Поки порожньо.</p>
             ) : (
               <ul className="max-h-[640px] divide-y divide-[var(--color-border)] overflow-y-auto">
                 {activity.map((a) => (
@@ -393,9 +341,7 @@ function TaskCard({
             <span className="font-display text-[14px] font-semibold">{name}</span>
             <div className="flex items-center gap-2.5">
               {task.costUsd > 0 && (
-                <span className="font-mono text-[10px] tabular text-[var(--color-fg-faint)]">
-                  ${task.costUsd.toFixed(3)}
-                </span>
+                <span className="font-mono text-[10px] tabular text-[var(--color-fg-faint)]">${task.costUsd.toFixed(3)}</span>
               )}
               {task.revisionRound > 0 && (
                 <span className="rounded-md bg-[var(--color-surface-2)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--color-fg-subtle)]">
@@ -406,7 +352,6 @@ function TaskCard({
             </div>
           </div>
 
-          {/* Опис (редагований у режимі плану) */}
           {editing ? (
             <div className="mt-2">
               <textarea
@@ -416,11 +361,7 @@ function TaskCard({
                 className="w-full resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-base)] px-3 py-2 text-[13px] text-[var(--color-fg)] focus:border-[var(--color-honey)]/50 focus:outline-none"
               />
               <div className="mt-2 flex items-center gap-2">
-                <button
-                  onClick={saveEdit}
-                  disabled={busy}
-                  className="rounded-lg bg-[var(--color-honey)] px-3 py-1.5 text-[12px] font-semibold text-[var(--color-ink)] disabled:opacity-60"
-                >
+                <button onClick={saveEdit} disabled={busy} className="rounded-lg bg-[var(--color-honey)] px-3 py-1.5 text-[12px] font-semibold text-[var(--color-ink)] disabled:opacity-60">
                   Зберегти
                 </button>
                 <button
@@ -435,12 +376,9 @@ function TaskCard({
               </div>
             </div>
           ) : (
-            <p className="mt-1 text-[13px] leading-relaxed text-[var(--color-fg-muted)]">
-              {task.description}
-            </p>
+            <p className="mt-1 text-[13px] leading-relaxed text-[var(--color-fg-muted)]">{task.description}</p>
           )}
 
-          {/* Інструменти редагування плану */}
           {editable && !editing && (
             <div className="mt-2.5 flex flex-wrap items-center gap-2">
               <select
@@ -450,33 +388,22 @@ function TaskCard({
                 className="rounded-lg border border-[var(--color-border)] bg-[var(--color-base)] px-2.5 py-1.5 text-[12px] text-[var(--color-fg-muted)] focus:border-[var(--color-honey)]/50 focus:outline-none"
               >
                 {executors.map((a) => (
-                  <option key={a.slug} value={a.slug}>
-                    {a.name}
-                  </option>
+                  <option key={a.slug} value={a.slug}>{a.name}</option>
                 ))}
               </select>
-              <button
-                onClick={() => setEditing(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-[12px] text-[var(--color-fg-muted)] transition-colors hover:text-[var(--color-fg)]"
-              >
+              <button onClick={() => setEditing(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-[12px] text-[var(--color-fg-muted)] transition-colors hover:text-[var(--color-fg)]">
                 <PencilIcon width={13} height={13} /> Редагувати
               </button>
-              <button
-                onClick={remove}
-                disabled={busy}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-[12px] text-[var(--color-fg-muted)] transition-colors hover:border-[var(--color-danger)]/40 hover:text-[var(--color-danger)] disabled:opacity-60"
-              >
+              <button onClick={remove} disabled={busy} className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-[12px] text-[var(--color-fg-muted)] transition-colors hover:border-[var(--color-danger)]/40 hover:text-[var(--color-danger)] disabled:opacity-60">
                 <TrashIcon width={13} height={13} /> Видалити
               </button>
             </div>
           )}
 
-          {/* Уточнювальне питання → відповідь власника */}
           {task.status === "waiting_question" && task.question && (
             <div className="mt-2.5 rounded-lg border border-[var(--color-honey)]/30 bg-[var(--color-honey)]/[0.07] p-3">
               <p className="text-[12.5px] text-[var(--color-fg-muted)]">
-                <span className="font-medium text-[var(--color-honey)]">Питання:</span>{" "}
-                {task.question}
+                <span className="font-medium text-[var(--color-honey)]">Питання:</span> {task.question}
               </p>
               <div className="mt-2 flex items-end gap-2">
                 <textarea
@@ -486,19 +413,13 @@ function TaskCard({
                   placeholder="Твоя відповідь виконавцю…"
                   className="flex-1 resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-base)] px-3 py-2 text-[13px] text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:border-[var(--color-honey)]/50 focus:outline-none"
                 />
-                <button
-                  onClick={sendAnswer}
-                  disabled={busy || !answer.trim()}
-                  aria-label="Надіслати відповідь"
-                  className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--color-honey)] text-[var(--color-ink)] transition-colors hover:bg-[var(--color-honey-bright)] disabled:opacity-60"
-                >
+                <button onClick={sendAnswer} disabled={busy || !answer.trim()} aria-label="Надіслати відповідь" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--color-honey)] text-[var(--color-ink)] transition-colors hover:bg-[var(--color-honey-bright)] disabled:opacity-60">
                   <SendIcon width={16} height={16} />
                 </button>
               </div>
             </div>
           )}
 
-          {/* Вердикт Критика */}
           {task.criticVerdict && (
             <div
               className={[
@@ -508,17 +429,8 @@ function TaskCard({
                   : "border-[var(--color-busy)]/25 bg-[var(--color-busy)]/[0.07] text-[var(--color-fg-muted)]",
               ].join(" ")}
             >
-              <span
-                className="font-medium"
-                style={{
-                  color:
-                    task.criticVerdict === "approved"
-                      ? "var(--color-online)"
-                      : "var(--color-busy)",
-                }}
-              >
-                Критик:{" "}
-                {task.criticVerdict === "approved" ? "схвалено" : "на доопрацювання"}
+              <span className="font-medium" style={{ color: task.criticVerdict === "approved" ? "var(--color-online)" : "var(--color-busy)" }}>
+                Критик: {task.criticVerdict === "approved" ? "схвалено" : "на доопрацювання"}
               </span>
               {task.criticComment && <> — {task.criticComment}</>}
             </div>
@@ -526,19 +438,14 @@ function TaskCard({
 
           {task.ownerFeedback && (
             <div className="mt-2 rounded-lg border border-[var(--color-info)]/25 bg-[var(--color-info)]/[0.07] px-3 py-2 text-[12.5px] text-[var(--color-fg-muted)]">
-              <span className="font-medium text-[var(--color-info)]">Твій коментар:</span>{" "}
-              {task.ownerFeedback}
+              <span className="font-medium text-[var(--color-info)]">Твій коментар:</span> {task.ownerFeedback}
             </div>
           )}
 
-          {/* Результат */}
           {task.result && (
             <div className="mt-3">
               <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setOpen((v) => !v)}
-                  className="text-[12px] font-medium text-[var(--color-honey)] hover:text-[var(--color-honey-bright)]"
-                >
+                <button onClick={() => setOpen((v) => !v)} className="text-[12px] font-medium text-[var(--color-honey)] hover:text-[var(--color-honey-bright)]">
                   {open ? "Згорнути результат ↑" : "Показати результат ↓"}
                 </button>
                 <CopyButton text={task.result} />
@@ -566,15 +473,9 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
             <span className="font-medium text-[var(--color-fg)]">{entry.actor}</span>{" "}
             <span className="text-[var(--color-fg-muted)]">{entry.action}</span>
           </span>
-          <span className="shrink-0 font-mono text-[10px] text-[var(--color-fg-subtle)]">
-            {timeShort(entry.createdAt)}
-          </span>
+          <span className="shrink-0 font-mono text-[10px] text-[var(--color-fg-subtle)]">{timeShort(entry.createdAt)}</span>
         </div>
-        {entry.detail && (
-          <p className="mt-0.5 line-clamp-2 text-[12px] text-[var(--color-fg-subtle)]">
-            {entry.detail}
-          </p>
-        )}
+        {entry.detail && <p className="mt-0.5 line-clamp-2 text-[12px] text-[var(--color-fg-subtle)]">{entry.detail}</p>}
       </div>
     </li>
   );

@@ -59,6 +59,17 @@
 - **Захист дашборда:** `SWARM_PASSWORD` у `.env` (порожній — без авторизації). Бекенд: публічний `/api/auth` + middleware `requireAuth` (заголовок `x-swarm-password`); фронтенд: `AuthGate.tsx` зберігає пароль локально. `npm run db:backup` — дамп бази в `backups/` (зберігає 14 останніх).
 - **Таблиці Фази 4:** `project_profile`, `content_drafts` (з `agent_slug`, доданим міграцією), `content_plan` (`scheduled_for` — `TIMESTAMPTZ`; у коді нормалізуємо до полудня UTC, щоб дата не зсувалась). Статуси — вільний текст; новий статус завдання — `waiting_question`. Як і у Фазі 3, ці таблиці **вже існували в БД з даними** — схему адаптовано під наявну, без втрати даних.
 
+## Платформа: мультипроєкти + інтеграції (Фаза 5)
+- **Мультипроєкти:** таблиця `projects`; до проєкту прив'язано **все** через `project_id` (`runs`, `chat_messages`, `content_drafts`, `content_plan`, `events`) + пер-проєктний профіль `project_profiles` (нова таблиця; старий однорядковий `project_profile` лишився, його дані перенесено в профіль першого проєкту). Агенти **спільні** для всіх проєктів; різниться лише контекст. Backfill міграцією приписав наявні дані до першого демопроєкту (`ai-proryv` «AI ПРОРИВ»).
+  - **Навігація:** верхня (`TopNav`: Проєкти `/`, Інбокс ідей `/ideas`, Акаунт `/account`) + вкладені роути проєкту `/projects/[slug]/{,'',runs,review,calendar,tasks,chats,profile,knowledge,tests}`. `ProjectContext` вантажить проєкт за slug і дає `useProject()`; `ProjectSidebar` — бічне меню проєкту з лічильником. Усі скоуплені виклики API шлють `?projectId=N` (або в тілі).
+  - Скоупінг на бекенді: хелпер `routes/projectScope.ts → getProjectId(req)`; `src/projects.ts` (CRUD), `src/chat.ts` (чат скоуплений `(agent_id, project_id)`), `src/context.ts → augmentSystemPrompt({systemPrompt, projectId, query})` домішує профіль + знання в КОЖЕН виклик агента (`conversational.ts`, `runner.ts`).
+- **Прямі завдання агентам (Частина 2):** у чаті — «Поставити завдання» (`POST /api/runs/solo` — прогін одразу у `running` з одним завданням для агента, оминаючи планування), «Делегувати Стратегу» (`POST /api/runs` — планування), «Запустити прогін рою» (перехід на `/runs`).
+- **База знань (Частина 3):** `knowledge_sources` + `knowledge_chunks` (повнотекст через `tsvector`, конфіг `simple`, GIN-індекс). `src/knowledge.ts` (чанкінг, інгест тексту/теки, `searchKnowledge`, `getKnowledgeBlock`). Сторінка «Знання»: нотатка, інгест теки, пошук, список джерел. CLI `npm run knowledge:ingest -- --dir=…`.
+- **Двосторонній Telegram (Частина 4):** `src/telegram.ts` — long-polling приймає повідомлення власника (за `TELEGRAM_OWNER_CHAT_ID`) і маршрутизує: текст → Стратег; `/agent <slug> …`, `/task …`, `/idea …`, `/project <slug>`. Активний проєкт — у пам'яті модуля (типово перший). Публікація: `POST /api/content-plan/:id/publish/telegram` (кнопка «У Telegram» у Календарі для записів-`telegram`); chat_id каналу — поле `telegram_channel` у профілі проєкту. Запускається з `index.ts` через `startTelegramPolling()` (тихо, якщо токен/owner порожні).
+- **Фабрика тестів (Частина 5):** `test_scenarios` (UNIQUE `agent_slug+title`) + `test_runs` (глобальні). `src/tests.ts`: `SEED_SCENARIOS`, `runScenario` (агент відповідає «голим» характером БЕЗ проєкт-контексту → Критик дає вердикт pass/fail+score), `runBatch`, `getOverview`. `npm run tests:seed`, `npm run tests:batch -- --limit=30`. Сторінка «Тести» — пас-рейт/вартість/час по агентах + останні прогони.
+- **Інбокс ідей (Частина 6):** `idea_inbox` (`project_id` nullable, `source` dashboard|telegram). `src/ideas.ts` + `/api/ideas`; сторінка `/ideas` (верхній рівень): додати/архівувати, «У прогін» (`POST /api/ideas/:id/convert` → створює прогін у проєкті ідеї/обраному). Ідеї також надходять через Telegram `/idea …`.
+- **Нові роути бекенду:** `/api/projects`, `/api/knowledge`, `/api/ideas`, `/api/tests`, `/api/content-plan/:id/publish/telegram`. Усі контентні/прогінні/чат-роути тепер вимагають `projectId`.
+
 ## Команди (root `package.json`)
 - `npm run dev` — бекенд + дашборд разом (`concurrently`)
 - `npm run dev:backend` — лише бекенд (плаский `tsx`, **без** watch)
@@ -70,12 +81,15 @@
 - `npm run db:reset` — перестворити базу з нуля
 - `npm run db:backup` — дамп бази в `backups/` (зберігає 14 останніх копій)
 - `npm run telegram:chat-id` — підказати свій Telegram chat_id для сповіщень
+- `npm run knowledge:ingest -- --dir=/шлях [--project=slug]` — інгест матеріалів у базу знань проєкту (Фаза 5)
+- `npm run tests:seed` — завантажити базовий набір тестових сценаріїв (Фаза 5)
+- `npm run tests:batch -- --limit=30` — прогнати сценарії через агентів + Критика й записати вердикти (Фаза 5)
 
 ## Змінні оточення (`.env`, шаблон — `.env.example`)
 - `DATABASE_URL` — підключення до PostgreSQL (типово `postgresql://swarm:swarm@localhost:5432/ai_agent_swarm`).
 - `BACKEND_PORT` (4000) та `NEXT_PUBLIC_BACKEND_URL` (адреса бекенду для дашборда).
 - Доступ до Claude (досить одного): `CLAUDE_CODE_OAUTH_TOKEN`, або `ANTHROPIC_API_KEY`, або збережений логін Claude Code. `ANTHROPIC_MODEL` (типово `claude-sonnet-4-6`).
-- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OWNER_CHAT_ID` — сповіщення в Telegram (необов'язково).
+- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OWNER_CHAT_ID` — Telegram: сповіщення + двосторонній режим (long-polling) у Фазі 5, якщо задано обидва. chat_id каналу для публікацій — у профілі проєкту, не в `.env`.
 - `SWARM_PASSWORD` — пароль на дашборд (порожній → без авторизації).
 - `AGENT_TIMEOUT_MS` — таймаут одного виклику агента (типово 180000).
 

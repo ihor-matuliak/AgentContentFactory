@@ -104,6 +104,7 @@ interface PlannedTask {
  */
 async function planWithRetry(
   runId: number,
+  projectId: number,
   systemPrompt: string,
   basePrompt: string,
 ): Promise<PlannedTask[]> {
@@ -113,7 +114,7 @@ async function planWithRetry(
   ];
   let lastErr: unknown;
   for (const prompt of attempts) {
-    const { text, usage } = await runAgent({ systemPrompt, prompt });
+    const { text, usage } = await runAgent({ systemPrompt, prompt, projectId });
     await accrue(runId, null, usage);
     try {
       const parsed = extractJson(text) as { tasks?: PlannedTask[] } | PlannedTask[];
@@ -177,7 +178,7 @@ ${roster}
 
   let planned: PlannedTask[];
   try {
-    planned = await planWithRetry(runId, strategist.systemPrompt, planPrompt);
+    planned = await planWithRetry(runId, run.projectId, strategist.systemPrompt, planPrompt);
   } catch (err) {
     await setRunStatusFailed(
       runId,
@@ -321,6 +322,8 @@ export async function executeTask(taskId: number): Promise<void> {
       prompt,
       mcpServers: tools.mcpServers,
       allowedTools: tools.allowedTools,
+      projectId: run.projectId,
+      contextQuery: task.description,
     });
     await accrue(task.runId, taskId, usage);
 
@@ -403,6 +406,8 @@ ${task.result}
     const { text, usage } = await runAgent({
       systemPrompt: critic.systemPrompt,
       prompt,
+      projectId: run.projectId,
+      contextQuery: task.description,
     });
     await accrue(task.runId, taskId, usage);
     const parsed = extractJson(text) as { verdict?: string; comment?: string };
@@ -468,6 +473,8 @@ ${block}
       const { text, usage } = await runAgent({
         systemPrompt: strategist.systemPrompt,
         prompt,
+        projectId: run.projectId,
+        contextQuery: run.goal,
       });
       await accrue(runId, null, usage);
       summary = text;

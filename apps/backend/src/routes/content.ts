@@ -8,6 +8,7 @@ import {
   updatePlanItem,
 } from "../content.js";
 import { listBoardTasks } from "../store.js";
+import { getProjectId } from "./projectScope.js";
 
 export const contentRouter = Router();
 
@@ -16,23 +17,43 @@ function asPlatform(v: unknown): Platform {
   return PLATFORMS.includes(v as Platform) ? (v as Platform) : "other";
 }
 
-/** GET /api/content/board — усі завдання рою для дошки «Задачі». */
-contentRouter.get("/board", async (_req, res) => {
-  res.json(await listBoardTasks());
+async function requireProject(
+  req: import("express").Request,
+  res: import("express").Response,
+): Promise<number | null> {
+  const projectId = await getProjectId(req);
+  if (projectId === null) {
+    res.status(400).json({ error: "Потрібен валідний projectId" });
+    return null;
+  }
+  return projectId;
+}
+
+/** GET /api/content/board?projectId=N — усі завдання рою проєкту. */
+contentRouter.get("/board", async (req, res) => {
+  const projectId = await requireProject(req, res);
+  if (projectId === null) return;
+  res.json(await listBoardTasks(projectId));
 });
 
-/** GET /api/content/drafts — усі чернетки контенту. */
-contentRouter.get("/drafts", async (_req, res) => {
-  res.json(await listDrafts());
+/** GET /api/content/drafts?projectId=N — чернетки контенту проєкту. */
+contentRouter.get("/drafts", async (req, res) => {
+  const projectId = await requireProject(req, res);
+  if (projectId === null) return;
+  res.json(await listDrafts(projectId));
 });
 
-/** GET /api/content/plan — контент-план (для календаря). */
-contentRouter.get("/plan", async (_req, res) => {
-  res.json(await listPlan());
+/** GET /api/content/plan?projectId=N — контент-план проєкту. */
+contentRouter.get("/plan", async (req, res) => {
+  const projectId = await requireProject(req, res);
+  if (projectId === null) return;
+  res.json(await listPlan(projectId));
 });
 
-/** POST /api/content/plan — додати запис у контент-план вручну. */
+/** POST /api/content/plan?projectId=N — додати запис у контент-план вручну. */
 contentRouter.post("/plan", async (req, res) => {
+  const projectId = await requireProject(req, res);
+  if (projectId === null) return;
   const b = req.body as Record<string, unknown>;
   const title = typeof b.title === "string" ? b.title.trim() : "";
   if (!title) {
@@ -40,6 +61,7 @@ contentRouter.post("/plan", async (req, res) => {
     return;
   }
   const item = await createPlanItem({
+    projectId,
     draftId: typeof b.draftId === "number" ? b.draftId : null,
     runId: typeof b.runId === "number" ? b.runId : null,
     platform: asPlatform(b.platform),

@@ -5,6 +5,7 @@ import type {
   CreateRunRequest,
   ReviewDecisionRequest,
   RunSize,
+  SoloTaskRequest,
   UpdateTaskRequest,
 } from "@swarm/shared";
 import { query } from "../db.js";
@@ -28,11 +29,18 @@ import {
 import { draftFromApprovedTask } from "../content.js";
 import { approvePlan } from "../agents/orchestrator.js";
 import { kickQueue, requeueRun } from "../agents/queue.js";
+import { findAgentBySlug } from "../chat.js";
+import { getProjectId } from "./projectScope.js";
 
 export const runsRouter = Router();
 
-/** POST /api/runs — створити прогін рою. */
+/** POST /api/runs — створити прогін рою в проєкті. */
 runsRouter.post("/", async (req, res) => {
+  const projectId = await getProjectId(req);
+  if (projectId === null) {
+    res.status(400).json({ error: "Потрібен валідний projectId" });
+    return;
+  }
   const body = req.body as Partial<CreateRunRequest>;
   const goal = typeof body.goal === "string" ? body.goal.trim() : "";
   if (!goal) {
@@ -45,22 +53,70 @@ runsRouter.post("/", async (req, res) => {
       ? body.maxBudgetUsd
       : null;
 
-  const run = await createRun(goal, size, "planning", maxBudgetUsd);
+  const run = await createRun(projectId, goal, size, "planning", maxBudgetUsd);
   await logActivity(run.id, "owner", "created run", goal);
-  await addEvent("run_created", "Створено новий прогін рою", goal, run.id);
+  await addEvent("run_created", "Створено новий прогін рою", goal, run.id, projectId);
   kickQueue();
 
   res.status(201).json(run);
 });
 
-/** GET /api/runs — список прогонів із лічильниками завдань. */
-runsRouter.get("/", async (_req, res) => {
-  res.json(await listRuns());
+/**
+ * POST /api/runs/solo — пряме (solo) завдання конкретному агенту, оминаючи
+ * планування Стратега (Фаза 5). Створює прогін одразу у виконанні з одним
+ * завданням для вибраного агента.
+ */
+runsRouter.post("/solo", async (req, res) => {
+  const projectId = await getProjectId(req);
+  if (projectId === null) {
+    res.status(400).json({ error: "Потрібен валідний projectId" });
+    return;
+  }
+  const body = req.body as Partial<SoloTaskRequest>;
+  const goal = typeof body.goal === "string" ? body.goal.trim() : "";
+  const agentSlug = typeof body.agentSlug === "string" ? body.agentSlug.trim() : "";
+  if (!goal || !agentSlug) {
+    res.status(400).json({ error: "Потрібні goal та agentSlug" });
+    return;
+  }
+  const agent = await findAgentBySlug(agentSlug);
+  if (!agent) {
+    res.status(404).json({ error: "Агента не знайдено" });
+    return;
+  }
+  const maxBudgetUsd =
+    typeof body.maxBudgetUsd === "number" && body.maxBudgetUsd > 0
+      ? body.maxBudgetUsd
+      : null;
+
+  // Прогін одразу у виконанні (без планування) + одне завдання для агента.
+  const run = await createRun(projectId, goal, "small", "running", maxBudgetUsd);
+  await addTaskToRun({ runId: run.id, agentSlug, description: goal });
+  await logActivity(run.id, "owner", "solo task", `${agent.name}: ${goal}`);
+  await addEvent("run_started", `Пряме завдання: ${agent.name}`, goal, run.id, projectId);
+  kickQueue();
+
+  res.status(201).json(run);
 });
 
-/** GET /api/runs/review — черга результатів «На перевірці». */
-runsRouter.get("/review", async (_req, res) => {
-  res.json(await listReviewQueue());
+/** GET /api/runs?projectId=N — список прогонів проєкту з лічильниками. */
+runsRouter.get("/", async (req, res) => {
+  const projectId = await getProjectId(req);
+  if (projectId === null) {
+    res.status(400).json({ error: "Потрібен валідний projectId" });
+    return;
+  }
+  res.json(await listRuns(projectId));
+});
+
+/** GET /api/runs/review?projectId=N — черга результатів «На перевірці». */
+runsRouter.get("/review", async (req, res) => {
+  const projectId = await getProjectId(req);
+  if (projectId === null) {
+    res.status(400).json({ error: "Потрібен валідний projectId" });
+    return;
+  }
+  res.json(await listReviewQueue(projectId));
 });
 
 /** GET /api/runs/:id — повна картина прогону. */
@@ -113,8 +169,9 @@ runsRouter.post("/:id/tasks/:taskId/review", async (req, res) => {
       "Результат відправлено на доопрацювання",
       comment || run.goal,
       runId,
+      run.projectId,
     );
-    await requeueRun(runId); // status → running, черга підхопить
+    await requeueRun(runId);
     res.json(await getRunDetail(runId));
     return;
   }
@@ -124,7 +181,7 @@ runsRouter.post("/:id/tasks/:taskId/review", async (req, res) => {
   await logActivity(runId, "owner", "approved result", task.description);
 
   // Замкнута петля: завдання-публікація → автоматична чернетка + контент-план.
-  const draft = await draftFromApprovedTask({ ...task, status: "approved" });
+  const draft = await draftFromApprovedTask({ ...task, status: "approved" }, run.projectId);
   if (draft) {
     await logActivity(runId, "system", "created draft", draft.title);
     await addEvent(
@@ -132,10 +189,10 @@ runsRouter.post("/:id/tasks/:taskId/review", async (req, res) => {
       "Створено чернетку контенту",
       `${draft.title} → контент-план`,
       runId,
+      run.projectId,
     );
   }
 
-  // Чи всі завдання прогону схвалені?
   const { rows } = await query<{ pending: string }>(
     "SELECT COUNT(*)::int AS pending FROM tasks WHERE run_id = $1 AND status <> 'approved' AND status <> 'failed'",
     [runId],
@@ -143,7 +200,7 @@ runsRouter.post("/:id/tasks/:taskId/review", async (req, res) => {
   if (Number(rows[0]?.pending ?? 0) === 0) {
     await setRunStatus(runId, "completed");
     await logActivity(runId, "owner", "approved run", "");
-    await addEvent("run_completed", "Прогін схвалено та завершено", run.goal, runId);
+    await addEvent("run_completed", "Прогін схвалено та завершено", run.goal, runId, run.projectId);
     await notifyOwner("🎉 Прогін рою завершено та схвалено", `Ціль: ${run.goal}`);
   }
 
@@ -157,9 +214,9 @@ runsRouter.post("/:id/repeat", async (req, res) => {
     res.status(404).json({ error: "Прогін не знайдено" });
     return;
   }
-  const run = await createRun(src.goal, src.size, "planning", src.maxBudgetUsd);
+  const run = await createRun(src.projectId, src.goal, src.size, "planning", src.maxBudgetUsd);
   await logActivity(run.id, "owner", "repeated run", `копія прогону #${src.id}`);
-  await addEvent("run_created", "Прогін повторено", src.goal, run.id);
+  await addEvent("run_created", "Прогін повторено", src.goal, run.id, src.projectId);
   kickQueue();
   res.status(201).json(run);
 });
@@ -184,7 +241,7 @@ runsRouter.post("/:id/tasks/:taskId/answer", async (req, res) => {
   }
   await answerTaskQuestion(taskId, answer);
   await logActivity(runId, "owner", "answered question", answer);
-  await requeueRun(runId); // status → running, черга підхопить
+  await requeueRun(runId);
   res.json(await getRunDetail(runId));
 });
 
@@ -218,7 +275,8 @@ runsRouter.patch("/:id/tasks/:taskId", async (req, res) => {
   const runId = Number(req.params.id);
   const taskId = Number(req.params.taskId);
   const task = await getTask(taskId);
-  if (!task || task.runId !== runId) {
+  const run = await getRun(runId);
+  if (!task || !run || task.runId !== runId) {
     res.status(404).json({ error: "Завдання не знайдено" });
     return;
   }
@@ -231,12 +289,11 @@ runsRouter.patch("/:id/tasks/:taskId", async (req, res) => {
   const updated = await updateTask(taskId, patch);
   await logActivity(runId, "owner", "edited task", patch.status ?? patch.description ?? "");
 
-  // Якщо вручну перевели у «схвалено» — спрацьовує замкнута петля.
   if (patch.status === "approved" && updated) {
-    const draft = await draftFromApprovedTask(updated);
+    const draft = await draftFromApprovedTask(updated, run.projectId);
     if (draft) {
       await logActivity(runId, "system", "created draft", draft.title);
-      await addEvent("draft_created", "Створено чернетку контенту", draft.title, runId);
+      await addEvent("draft_created", "Створено чернетку контенту", draft.title, runId, run.projectId);
     }
   }
   res.json(await getRunDetail(runId));

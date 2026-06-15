@@ -4,26 +4,24 @@ import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import type { ContentPlanItem, Platform } from "@swarm/shared";
 import { api } from "@/lib/api";
+import { useProject } from "@/components/ProjectContext";
 import { PageHeader, PlatformBadge } from "@/components/ui";
-import { CalendarIcon, CheckIcon, PlusIcon, RotateIcon, TrashIcon } from "@/components/icons";
+import { CalendarIcon, CheckIcon, PlusIcon, RotateIcon, SendIcon, TrashIcon } from "@/components/icons";
 
 const PLATFORMS: Platform[] = ["youtube", "telegram", "instagram", "other"];
 
 function fmtDateHeading(date: string): string {
   const d = new Date(`${date}T00:00:00`);
-  return d.toLocaleDateString("uk-UA", {
-    weekday: "short",
-    day: "numeric",
-    month: "long",
-  });
+  return d.toLocaleDateString("uk-UA", { weekday: "short", day: "numeric", month: "long" });
 }
 
 export default function CalendarPage() {
+  const project = useProject();
+  const base = `/projects/${project.slug}`;
   const [items, setItems] = useState<ContentPlanItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Композер нового запису.
   const [title, setTitle] = useState("");
   const [platform, setPlatform] = useState<Platform>("youtube");
   const [date, setDate] = useState("");
@@ -31,7 +29,7 @@ export default function CalendarPage() {
 
   async function refresh() {
     try {
-      setItems(await api.listPlan());
+      setItems(await api.listPlan(project.id));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Не вдалося завантажити план");
     } finally {
@@ -43,7 +41,8 @@ export default function CalendarPage() {
     void refresh();
     const t = setInterval(refresh, 8000);
     return () => clearInterval(t);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id]);
 
   async function add(e: FormEvent) {
     e.preventDefault();
@@ -51,11 +50,7 @@ export default function CalendarPage() {
     setAdding(true);
     setError(null);
     try {
-      await api.createPlanItem({
-        title: title.trim(),
-        platform,
-        scheduledFor: date || null,
-      });
+      await api.createPlanItem(project.id, { title: title.trim(), platform, scheduledFor: date || null });
       setTitle("");
       setDate("");
       await refresh();
@@ -66,7 +61,6 @@ export default function CalendarPage() {
     }
   }
 
-  // Групуємо за датою; без дати — окремо в кінці.
   const dated = items.filter((i) => i.scheduledFor);
   const undated = items.filter((i) => !i.scheduledFor);
   const groups = new Map<string, ContentPlanItem[]>();
@@ -75,14 +69,13 @@ export default function CalendarPage() {
     (groups.get(key) ?? groups.set(key, []).get(key)!).push(it);
   }
   const sortedDates = [...groups.keys()].sort();
-
   const published = items.filter((i) => i.status === "published").length;
 
   return (
     <>
       <PageHeader
         title="Календар контенту"
-        subtitle="Що і коли публікуємо на майданчиках. Схвалені завдання-публікації потрапляють сюди автоматично — лишається призначити дату."
+        subtitle="Що і коли публікуємо на майданчиках. Схвалені завдання-публікації потрапляють сюди автоматично. Telegram-записи можна публікувати одним кліком."
         right={
           <div className="flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-2 text-[12px] text-[var(--color-fg-muted)]">
             <CalendarIcon width={15} height={15} className="text-[var(--color-honey)]" />
@@ -92,15 +85,9 @@ export default function CalendarPage() {
       />
 
       <div className="space-y-6 px-6 py-7 md:px-10">
-        {/* Композер */}
-        <form
-          onSubmit={add}
-          className="flex flex-wrap items-end gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
-        >
+        <form onSubmit={add} className="flex flex-wrap items-end gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
           <div className="min-w-[220px] flex-1">
-            <label className="mb-1.5 block text-[12px] font-medium text-[var(--color-fg-muted)]">
-              Що публікуємо
-            </label>
+            <label className="mb-1.5 block text-[12px] font-medium text-[var(--color-fg-muted)]">Що публікуємо</label>
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -109,46 +96,24 @@ export default function CalendarPage() {
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-[12px] font-medium text-[var(--color-fg-muted)]">
-              Майданчик
-            </label>
-            <select
-              value={platform}
-              onChange={(e) => setPlatform(e.target.value as Platform)}
-              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-base)] px-3 py-2 text-[13px] text-[var(--color-fg)] focus:border-[var(--color-honey)]/50 focus:outline-none"
-            >
+            <label className="mb-1.5 block text-[12px] font-medium text-[var(--color-fg-muted)]">Майданчик</label>
+            <select value={platform} onChange={(e) => setPlatform(e.target.value as Platform)} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-base)] px-3 py-2 text-[13px] text-[var(--color-fg)] focus:border-[var(--color-honey)]/50 focus:outline-none">
               {PLATFORMS.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
+                <option key={p} value={p}>{p}</option>
               ))}
             </select>
           </div>
           <div>
-            <label className="mb-1.5 block text-[12px] font-medium text-[var(--color-fg-muted)]">
-              Дата
-            </label>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-base)] px-3 py-2 text-[13px] text-[var(--color-fg)] focus:border-[var(--color-honey)]/50 focus:outline-none"
-            />
+            <label className="mb-1.5 block text-[12px] font-medium text-[var(--color-fg-muted)]">Дата</label>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-base)] px-3 py-2 text-[13px] text-[var(--color-fg)] focus:border-[var(--color-honey)]/50 focus:outline-none" />
           </div>
-          <button
-            type="submit"
-            disabled={!title.trim() || adding}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-honey)] px-4 py-2 text-[13px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-honey-bright)] disabled:opacity-60"
-          >
-            <PlusIcon width={15} height={15} />
-            Додати
+          <button type="submit" disabled={!title.trim() || adding} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-honey)] px-4 py-2 text-[13px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-honey-bright)] disabled:opacity-60">
+            <PlusIcon width={15} height={15} /> Додати
           </button>
         </form>
 
         {error && (
-          <div className="rounded-xl border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 px-4 py-3 text-[13px] text-[var(--color-danger)]">
-            {error}
-          </div>
+          <div className="rounded-xl border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 px-4 py-3 text-[13px] text-[var(--color-danger)]">{error}</div>
         )}
 
         {loaded && items.length === 0 && (
@@ -157,13 +122,9 @@ export default function CalendarPage() {
           </div>
         )}
 
-        {!loaded &&
-          [0, 1].map((i) => (
-            <div
-              key={i}
-              className="h-28 animate-pulse rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]"
-            />
-          ))}
+        {!loaded && [0, 1].map((i) => (
+          <div key={i} className="h-28 animate-pulse rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]" />
+        ))}
 
         {sortedDates.map((d) => (
           <section key={d}>
@@ -173,7 +134,7 @@ export default function CalendarPage() {
             </h2>
             <div className="space-y-2.5">
               {groups.get(d)!.map((it) => (
-                <PlanRow key={it.id} item={it} onChange={refresh} />
+                <PlanRow key={it.id} item={it} base={base} onChange={refresh} setError={setError} />
               ))}
             </div>
           </section>
@@ -181,12 +142,10 @@ export default function CalendarPage() {
 
         {undated.length > 0 && (
           <section>
-            <h2 className="mb-2.5 text-[12px] font-semibold uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">
-              Без дати · {undated.length}
-            </h2>
+            <h2 className="mb-2.5 text-[12px] font-semibold uppercase tracking-[0.14em] text-[var(--color-fg-subtle)]">Без дати · {undated.length}</h2>
             <div className="space-y-2.5">
               {undated.map((it) => (
-                <PlanRow key={it.id} item={it} onChange={refresh} />
+                <PlanRow key={it.id} item={it} base={base} onChange={refresh} setError={setError} />
               ))}
             </div>
           </section>
@@ -196,7 +155,17 @@ export default function CalendarPage() {
   );
 }
 
-function PlanRow({ item, onChange }: { item: ContentPlanItem; onChange: () => void }) {
+function PlanRow({
+  item,
+  base,
+  onChange,
+  setError,
+}: {
+  item: ContentPlanItem;
+  base: string;
+  onChange: () => void;
+  setError: (s: string | null) => void;
+}) {
   const [busy, setBusy] = useState(false);
   const published = item.status === "published";
 
@@ -220,30 +189,25 @@ function PlanRow({ item, onChange }: { item: ContentPlanItem; onChange: () => vo
     }
   }
 
+  async function publishTelegram() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.publishToTelegram(item.id);
+      onChange();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не вдалося опублікувати в Telegram");
+      setBusy(false);
+    }
+  }
+
   return (
-    <div
-      className={[
-        "flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] border bg-[var(--color-surface)] px-4 py-3",
-        published ? "border-[var(--color-online)]/30" : "border-[var(--color-border)]",
-      ].join(" ")}
-    >
+    <div className={["flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] border bg-[var(--color-surface)] px-4 py-3", published ? "border-[var(--color-online)]/30" : "border-[var(--color-border)]"].join(" ")}>
       <PlatformBadge platform={item.platform} />
       <div className="min-w-0 flex-1">
-        <p
-          className={[
-            "text-[14px] font-medium",
-            published ? "text-[var(--color-fg-muted)] line-through" : "text-[var(--color-fg)]",
-          ].join(" ")}
-        >
-          {item.title}
-        </p>
+        <p className={["text-[14px] font-medium", published ? "text-[var(--color-fg-muted)] line-through" : "text-[var(--color-fg)]"].join(" ")}>{item.title}</p>
         {item.runId && (
-          <Link
-            href={`/runs/${item.runId}`}
-            className="font-mono text-[10px] text-[var(--color-fg-subtle)] hover:text-[var(--color-honey)]"
-          >
-            з прогону #{item.runId}
-          </Link>
+          <Link href={`${base}/runs/${item.runId}`} className="font-mono text-[10px] text-[var(--color-fg-subtle)] hover:text-[var(--color-honey)]">з прогону #{item.runId}</Link>
         )}
       </div>
 
@@ -255,33 +219,30 @@ function PlanRow({ item, onChange }: { item: ContentPlanItem; onChange: () => vo
         className="rounded-lg border border-[var(--color-border)] bg-[var(--color-base)] px-2.5 py-1.5 font-mono text-[12px] text-[var(--color-fg-muted)] focus:border-[var(--color-honey)]/50 focus:outline-none"
       />
 
+      {item.platform === "telegram" && !published && (
+        <button
+          onClick={publishTelegram}
+          disabled={busy}
+          title="Опублікувати в Telegram-канал проєкту"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-[#56b6f7]/40 px-3 py-1.5 text-[12px] font-medium text-[#56b6f7] transition-colors hover:bg-[#56b6f7]/10 disabled:opacity-60"
+        >
+          <SendIcon width={13} height={13} /> У Telegram
+        </button>
+      )}
+
       <button
         onClick={() => patch({ status: published ? "planned" : "published" })}
         disabled={busy}
-        className={[
-          "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors disabled:opacity-60",
-          published
-            ? "border-[var(--color-border-strong)] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]"
-            : "border-[var(--color-online)]/40 text-[var(--color-online)] hover:bg-[var(--color-online)]/10",
-        ].join(" ")}
+        className={["inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors disabled:opacity-60", published ? "border-[var(--color-border-strong)] text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]" : "border-[var(--color-online)]/40 text-[var(--color-online)] hover:bg-[var(--color-online)]/10"].join(" ")}
       >
         {published ? (
-          <>
-            <RotateIcon width={13} height={13} /> Запланувати
-          </>
+          <><RotateIcon width={13} height={13} /> Запланувати</>
         ) : (
-          <>
-            <CheckIcon width={13} height={13} /> Опубліковано
-          </>
+          <><CheckIcon width={13} height={13} /> Опубліковано</>
         )}
       </button>
 
-      <button
-        onClick={remove}
-        disabled={busy}
-        aria-label="Видалити"
-        className="grid h-8 w-8 place-items-center rounded-lg text-[var(--color-fg-subtle)] transition-colors hover:bg-[var(--color-danger)]/10 hover:text-[var(--color-danger)] disabled:opacity-60"
-      >
+      <button onClick={remove} disabled={busy} aria-label="Видалити" className="grid h-8 w-8 place-items-center rounded-lg text-[var(--color-fg-subtle)] transition-colors hover:bg-[var(--color-danger)]/10 hover:text-[var(--color-danger)] disabled:opacity-60">
         <TrashIcon width={15} height={15} />
       </button>
     </div>

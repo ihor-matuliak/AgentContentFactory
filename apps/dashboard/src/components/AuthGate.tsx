@@ -32,7 +32,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         // Пароль потрібен — перевіряємо збережений запитом до захищеного API.
         if (api.hasPassword()) {
           try {
-            await api.unreadCount();
+            await api.listProjects();
             if (alive) setGate("open");
             return;
           } catch {

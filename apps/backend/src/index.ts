@@ -7,8 +7,14 @@ import { runsRouter } from "./routes/runs.js";
 import { eventsRouter } from "./routes/events.js";
 import { profileRouter } from "./routes/profile.js";
 import { contentRouter } from "./routes/content.js";
+import { projectsRouter } from "./routes/projects.js";
+import { knowledgeRouter } from "./routes/knowledge.js";
+import { ideasRouter } from "./routes/ideas.js";
+import { testsRouter } from "./routes/tests.js";
+import { publishRouter } from "./routes/publish.js";
 import { authEnabled, authRouter, requireAuth } from "./routes/auth.js";
 import { resumeQueue } from "./agents/queue.js";
+import { startTelegramPolling } from "./telegram.js";
 
 const app = express();
 
@@ -29,11 +35,16 @@ app.get("/api/health", (_req, res) => {
 app.use("/api/auth", authRouter);
 app.use("/api", requireAuth);
 
+app.use("/api/projects", projectsRouter);
 app.use("/api/agents", agentsRouter);
 app.use("/api/runs", runsRouter);
 app.use("/api/events", eventsRouter);
 app.use("/api/profile", profileRouter);
 app.use("/api/content", contentRouter);
+app.use("/api/content-plan", publishRouter);
+app.use("/api/knowledge", knowledgeRouter);
+app.use("/api/ideas", ideasRouter);
+app.use("/api/tests", testsRouter);
 
 app.listen(env.backendPort, () => {
   console.log(`🚀 Бекенд рою слухає на http://localhost:${env.backendPort}`);
@@ -52,4 +63,6 @@ app.listen(env.backendPort, () => {
   );
   // Підхоплюємо незавершені прогони після перезапуску бекенду.
   void resumeQueue();
+  // Двосторонній Telegram (якщо налаштовано TELEGRAM_BOT_TOKEN/OWNER_CHAT_ID).
+  startTelegramPolling();
 });

@@ -2,22 +2,23 @@ import type { ProjectProfile, SaveProfileRequest } from "@swarm/shared";
 import { query } from "./db.js";
 
 /**
- * Профіль проєкту — єдиний бренд-контекст фабрики контенту.
+ * Профіль проєкту — бренд-контекст ПЕР-ПРОЄКТ (Фаза 5).
  *
- * Зберігається в одному рядку таблиці `project_profile` (id = 1) і
- * домішується до системного промпту КОЖНОГО агента перед будь-яким запитом
- * до Claude — і в чаті, і в прогоні рою. Так усі агенти «знають» бізнес,
- * аудиторію, тон і табу, не дублюючи це в кожному характері.
+ * Зберігається в таблиці `project_profiles` (один рядок на проєкт) і
+ * домішується (разом із релевантними знаннями) до системного промпту КОЖНОГО
+ * агента перед запитом до Claude — і в чаті, і в прогоні. Композиція профілю +
+ * знань живе в `context.ts`.
  */
 
 interface ProfileRow {
+  project_id: number;
   business: string;
   audience: string;
   products: string;
-  // У БД колонка зветься `tone_of_voice`; у типі/API — `tone`.
   tone_of_voice: string;
   taboos: string;
   examples: string;
+  telegram_channel: string;
   updated_at: Date;
 }
 
@@ -29,6 +30,7 @@ function mapProfile(row: ProfileRow): ProjectProfile {
     tone: row.tone_of_voice,
     taboos: row.taboos,
     examples: row.examples,
+    telegramChannel: row.telegram_channel,
     updatedAt: row.updated_at.toISOString(),
   };
 }
@@ -40,55 +42,64 @@ const EMPTY: ProjectProfile = {
   tone: "",
   taboos: "",
   examples: "",
+  telegramChannel: "",
   updatedAt: new Date(0).toISOString(),
 };
 
-/** Невеликий кеш, щоб не ходити в базу на кожен виклик агента. */
-let cache: ProjectProfile | null = null;
-let cachedAt = 0;
+/** Кеш профілів за projectId, щоб не ходити в базу на кожен виклик агента. */
+const cache = new Map<number, { profile: ProjectProfile; at: number }>();
 const CACHE_TTL_MS = 5000;
 
-export async function getProfile(): Promise<ProjectProfile> {
+export async function getProfile(projectId: number): Promise<ProjectProfile> {
   const now = Date.now();
-  if (cache && now - cachedAt < CACHE_TTL_MS) return cache;
+  const hit = cache.get(projectId);
+  if (hit && now - hit.at < CACHE_TTL_MS) return hit.profile;
   const { rows } = await query<ProfileRow>(
-    "SELECT * FROM project_profile WHERE id = 1",
+    "SELECT * FROM project_profiles WHERE project_id = $1",
+    [projectId],
   );
-  cache = rows[0] ? mapProfile(rows[0]) : EMPTY;
-  cachedAt = now;
-  return cache;
+  const profile = rows[0] ? mapProfile(rows[0]) : EMPTY;
+  cache.set(projectId, { profile, at: now });
+  return profile;
 }
 
-export async function saveProfile(data: SaveProfileRequest): Promise<ProjectProfile> {
+export async function saveProfile(
+  projectId: number,
+  data: SaveProfileRequest,
+): Promise<ProjectProfile> {
   const { rows } = await query<ProfileRow>(
-    `INSERT INTO project_profile (id, business, audience, products, tone_of_voice, taboos, examples, updated_at)
-     VALUES (1, $1, $2, $3, $4, $5, $6, now())
-     ON CONFLICT (id) DO UPDATE SET
+    `INSERT INTO project_profiles
+       (project_id, business, audience, products, tone_of_voice, taboos, examples, telegram_channel, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+     ON CONFLICT (project_id) DO UPDATE SET
        business = EXCLUDED.business,
        audience = EXCLUDED.audience,
        products = EXCLUDED.products,
        tone_of_voice = EXCLUDED.tone_of_voice,
        taboos = EXCLUDED.taboos,
        examples = EXCLUDED.examples,
+       telegram_channel = EXCLUDED.telegram_channel,
        updated_at = now()
      RETURNING *`,
     [
+      projectId,
       data.business ?? "",
       data.audience ?? "",
       data.products ?? "",
       data.tone ?? "",
       data.taboos ?? "",
       data.examples ?? "",
+      data.telegramChannel ?? "",
     ],
   );
-  cache = mapProfile(rows[0]);
-  cachedAt = Date.now();
-  return cache;
+  const profile = mapProfile(rows[0]);
+  cache.set(projectId, { profile, at: Date.now() });
+  return profile;
 }
 
 /** Текстовий блок профілю для домішування у системний промпт (або ""). */
-export async function getProfileBlock(): Promise<string> {
-  const p = await getProfile();
+export async function getProfileBlock(projectId: number): Promise<string> {
+  const p = await getProfile(projectId);
   const lines: string[] = [];
   if (p.business) lines.push(`Бізнес: ${p.business}`);
   if (p.audience) lines.push(`Аудиторія: ${p.audience}`);
@@ -101,10 +112,4 @@ export async function getProfileBlock(): Promise<string> {
     "── БРЕНД-КОНТЕКСТ ПРОЄКТУ (враховуй у кожній відповіді) ──",
     ...lines,
   ].join("\n");
-}
-
-/** Прикладає бренд-контекст до характеру агента (системного промпту). */
-export async function withProfile(systemPrompt: string): Promise<string> {
-  const block = await getProfileBlock();
-  return block ? `${systemPrompt}\n\n${block}` : systemPrompt;
 }

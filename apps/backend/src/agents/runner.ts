@@ -1,7 +1,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { McpServerConfig, PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import { env } from "../env.js";
-import { withProfile } from "../profile.js";
+import { augmentSystemPrompt } from "../context.js";
 
 /** Витрати одного виклику моделі. */
 export interface Usage {
@@ -35,14 +35,22 @@ export async function runAgent(opts: {
   maxTurns?: number;
   /** Таймаут виклику, мс. Типово — env.agentTimeoutMs. 0 — без таймауту. */
   timeoutMs?: number;
+  /** Проєкт для домішування бренд-профілю + знань (Фаза 5). */
+  projectId?: number | null;
+  /** Текст для пошуку релевантних знань (зазвичай — опис завдання). */
+  contextQuery?: string;
 }): Promise<AgentRunResult> {
   const allowed = opts.allowedTools ?? [];
 
   const response = query({
     prompt: opts.prompt,
     options: {
-      // Домішуємо бренд-контекст проєкту до характеру агента.
-      systemPrompt: await withProfile(opts.systemPrompt),
+      // Домішуємо бренд-контекст проєкту + релевантні знання до характеру агента.
+      systemPrompt: await augmentSystemPrompt({
+        systemPrompt: opts.systemPrompt,
+        projectId: opts.projectId,
+        query: opts.contextQuery,
+      }),
       model: env.anthropicModel,
       maxTurns: opts.maxTurns ?? (allowed.length > 0 ? 6 : 1),
       // Жодних вбудованих інструментів Claude Code — лише наші MCP-інструменти.
