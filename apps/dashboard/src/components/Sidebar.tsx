@@ -6,10 +6,11 @@ import { useEffect, useState, type ComponentType, type SVGProps } from "react";
 import { api } from "@/lib/api";
 import {
   AnalyticsIcon,
+  CalendarIcon,
   ChatIcon,
   HexLogo,
-  MediaIcon,
   OverviewIcon,
+  ProfileIcon,
   ReviewIcon,
   RunsIcon,
   SettingsIcon,
@@ -30,9 +31,10 @@ const NAV: NavItem[] = [
   { label: "Огляд", href: "/", icon: OverviewIcon },
   { label: "Чати з агентами", href: "/chats", icon: ChatIcon },
   { label: "Прогони рою", href: "/runs", icon: RunsIcon },
+  { label: "Задачі", href: "/tasks", icon: TasksIcon },
+  { label: "Календар", href: "/calendar", icon: CalendarIcon },
   { label: "На перевірці", href: "/review", icon: ReviewIcon, badge: true },
-  { label: "Пакети медіа", href: "/media", icon: MediaIcon, soon: true },
-  { label: "Задачі", href: "/tasks", icon: TasksIcon, soon: true },
+  { label: "Профіль", href: "/profile", icon: ProfileIcon },
   { label: "Аналітика", href: "/analytics", icon: AnalyticsIcon, soon: true },
   { label: "Налаштування", href: "/settings", icon: SettingsIcon, soon: true },
 ];

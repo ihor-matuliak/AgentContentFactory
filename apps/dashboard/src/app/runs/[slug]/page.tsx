@@ -1,18 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ActivityEntry, RunDetail, RunTask } from "@swarm/shared";
+import type { ActivityEntry, AgentSummary, RunDetail, RunTask } from "@swarm/shared";
 import { api } from "@/lib/api";
 import { Markdown } from "@/components/Markdown";
+import { CopyButton } from "@/components/CopyButton";
 import {
   AgentBadge,
   ProgressBar,
   RunStatusBadge,
   TaskStatusBadge,
 } from "@/components/ui";
-import { ArrowLeftIcon, CoinIcon, PlayIcon } from "@/components/icons";
+import {
+  ArrowLeftIcon,
+  CoinIcon,
+  PencilIcon,
+  PlayIcon,
+  PlusIcon,
+  RotateIcon,
+  SendIcon,
+  TrashIcon,
+} from "@/components/icons";
 
 function timeShort(iso: string): string {
   return new Date(iso).toLocaleTimeString("uk-UA", {
@@ -26,10 +36,14 @@ const ACTIVE_STATES = new Set(["planning", "running"]);
 export default function RunDetailPage() {
   const params = useParams<{ slug: string }>();
   const id = params.slug;
+  const router = useRouter();
 
   const [data, setData] = useState<RunDetail | null>(null);
+  const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
+  const [repeating, setRepeating] = useState(false);
+  const [addingTask, setAddingTask] = useState(false);
   const loadedOnce = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -44,19 +58,52 @@ export default function RunDetailPage() {
 
   useEffect(() => {
     void refresh();
+    api.listAgents().then(setAgents).catch(() => {});
     const t = setInterval(refresh, 3500);
     return () => clearInterval(t);
   }, [refresh]);
 
+  // Виконавці = усі активні агенти, крім Стратега та Критика.
+  const executors = agents.filter(
+    (a) => a.isActive && a.slug !== "strategist" && a.slug !== "critic",
+  );
+
   async function handleApprove() {
     setApproving(true);
     try {
-      const detail = await api.approvePlan(id);
-      setData(detail);
+      setData(await api.approvePlan(id));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Не вдалося запустити прогін");
     } finally {
       setApproving(false);
+    }
+  }
+
+  async function handleRepeat() {
+    setRepeating(true);
+    try {
+      const run = await api.repeatRun(id);
+      router.push(`/runs/${run.id}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не вдалося повторити прогін");
+      setRepeating(false);
+    }
+  }
+
+  async function handleAddTask() {
+    if (!data || executors.length === 0) return;
+    setAddingTask(true);
+    try {
+      setData(
+        await api.addTask(data.run.id, {
+          description: "Нове завдання — опиши, що зробити",
+          agentSlug: executors[0].slug,
+        }),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не вдалося додати завдання");
+    } finally {
+      setAddingTask(false);
     }
   }
 
@@ -83,19 +130,30 @@ export default function RunDetailPage() {
   const { run, tasks, activity } = data;
   const done = tasks.filter((t) => t.status === "done" || t.status === "approved").length;
   const isActive = ACTIVE_STATES.has(run.status);
+  const editable = run.status === "awaiting_approval";
 
   return (
     <div className="px-6 py-7 md:px-10">
-      {/* Хлібні крихти + шапка */}
-      <div className="flex items-center gap-2 text-[12px] text-[var(--color-fg-subtle)]">
-        <Link
-          href="/runs"
-          className="inline-flex items-center gap-1 hover:text-[var(--color-fg)]"
+      {/* Хлібні крихти + дії */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-[12px] text-[var(--color-fg-subtle)]">
+          <Link
+            href="/runs"
+            className="inline-flex items-center gap-1 hover:text-[var(--color-fg)]"
+          >
+            <ArrowLeftIcon width={14} height={14} /> Прогони рою
+          </Link>
+          <span>/</span>
+          <span className="font-mono">#{run.id}</span>
+        </div>
+        <button
+          onClick={handleRepeat}
+          disabled={repeating}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-[12.5px] text-[var(--color-fg-muted)] transition-colors hover:border-[var(--color-honey)]/40 hover:text-[var(--color-fg)] disabled:opacity-60"
         >
-          <ArrowLeftIcon width={14} height={14} /> Прогони рою
-        </Link>
-        <span>/</span>
-        <span className="font-mono">#{run.id}</span>
+          <RotateIcon width={14} height={14} />
+          {repeating ? "Повторюю…" : "Повторити прогін"}
+        </button>
       </div>
 
       <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
@@ -121,6 +179,12 @@ export default function RunDetailPage() {
             </div>
             <div className="font-mono text-[15px] tabular text-[var(--color-honey)]">
               ${run.costUsd.toFixed(3)}
+              {run.maxBudgetUsd != null && (
+                <span className="text-[var(--color-fg-subtle)]">
+                  {" "}
+                  / ${run.maxBudgetUsd.toFixed(2)}
+                </span>
+              )}
             </div>
           </div>
           <div className="h-8 w-px bg-[var(--color-border)]" />
@@ -135,6 +199,27 @@ export default function RunDetailPage() {
         </div>
       </div>
 
+      {/* Бюджетна смужка */}
+      {run.maxBudgetUsd != null && run.maxBudgetUsd > 0 && (
+        <div className="mt-4 flex items-center gap-3">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--color-surface-2)]">
+            <div
+              className="h-full rounded-full transition-all"
+              style={{
+                width: `${Math.min(100, (run.costUsd / run.maxBudgetUsd) * 100)}%`,
+                backgroundColor:
+                  run.costUsd >= run.maxBudgetUsd
+                    ? "var(--color-danger)"
+                    : "var(--color-honey)",
+              }}
+            />
+          </div>
+          <span className="shrink-0 font-mono text-[11px] tabular text-[var(--color-fg-subtle)]">
+            бюджет {Math.round((run.costUsd / run.maxBudgetUsd) * 100)}%
+          </span>
+        </div>
+      )}
+
       {/* Помилка прогону */}
       {run.status === "failed" && run.error && (
         <div className="mt-5 rounded-xl border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 px-4 py-3 text-[13px] text-[var(--color-danger)]">
@@ -143,17 +228,18 @@ export default function RunDetailPage() {
       )}
 
       {/* Схвалення плану */}
-      {run.status === "awaiting_approval" && (
+      {editable && (
         <div className="mt-5 rounded-[var(--radius-card)] border border-[var(--color-honey)]/30 bg-gradient-to-br from-[var(--color-honey)]/[0.08] to-transparent p-5">
           <h2 className="font-display text-[16px] font-semibold">
-            Стратег склав план — потрібне твоє схвалення
+            Стратег склав план — переглянь і за потреби відредагуй
           </h2>
           <p className="mt-1 text-[13px] text-[var(--color-fg-muted)]">
-            Переглянь {tasks.length} завдань нижче. Натисни «Запустити рій», щоб виконавці взялися до роботи.
+            Зміни опис чи виконавця завдань, додай або видали кроки. Коли план
+            влаштовує — натисни «Запустити рій».
           </p>
           <button
             onClick={handleApprove}
-            disabled={approving}
+            disabled={approving || tasks.length === 0}
             className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[var(--color-honey)] px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-honey-bright)] disabled:opacity-60"
           >
             <PlayIcon width={16} height={16} />
@@ -183,15 +269,35 @@ export default function RunDetailPage() {
           )}
 
           {tasks.map((t) => (
-            <TaskCard key={t.id} task={t} />
+            <TaskCard
+              key={t.id}
+              task={t}
+              runId={run.id}
+              editable={editable}
+              executors={executors}
+              onMutate={setData}
+            />
           ))}
+
+          {editable && executors.length > 0 && (
+            <button
+              onClick={handleAddTask}
+              disabled={addingTask}
+              className="flex w-full items-center justify-center gap-2 rounded-[var(--radius-card)] border border-dashed border-[var(--color-border-strong)] px-5 py-3 text-[13px] text-[var(--color-fg-muted)] transition-colors hover:border-[var(--color-honey)]/40 hover:text-[var(--color-fg)] disabled:opacity-60"
+            >
+              <PlusIcon width={15} height={15} /> Додати завдання
+            </button>
+          )}
 
           {/* Підсумкове зведення */}
           {run.summary && (
             <div className="rounded-[var(--radius-card)] border border-[var(--color-honey)]/25 bg-[var(--color-surface)] p-5">
-              <h3 className="mb-3 flex items-center gap-2 font-display text-[15px] font-semibold text-[var(--color-honey)]">
-                Зведення від Стратега
-              </h3>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h3 className="flex items-center gap-2 font-display text-[15px] font-semibold text-[var(--color-honey)]">
+                  Зведення від Стратега
+                </h3>
+                <CopyButton text={run.summary} />
+              </div>
               <Markdown>{run.summary}</Markdown>
             </div>
           )}
@@ -219,9 +325,65 @@ export default function RunDetailPage() {
   );
 }
 
-function TaskCard({ task }: { task: RunTask }) {
+function TaskCard({
+  task,
+  runId,
+  editable,
+  executors,
+  onMutate,
+}: {
+  task: RunTask;
+  runId: number;
+  editable: boolean;
+  executors: AgentSummary[];
+  onMutate: (detail: RunDetail) => void;
+}) {
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(task.description);
+  const [answer, setAnswer] = useState("");
+  const [busy, setBusy] = useState(false);
   const name = task.agentName ?? task.agentSlug;
+
+  async function saveEdit() {
+    setBusy(true);
+    try {
+      onMutate(await api.updateTask(runId, task.id, { description: draft.trim() }));
+      setEditing(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reassign(slug: string) {
+    setBusy(true);
+    try {
+      onMutate(await api.updateTask(runId, task.id, { agentSlug: slug }));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    setBusy(true);
+    try {
+      onMutate(await api.deleteTask(runId, task.id));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendAnswer() {
+    if (!answer.trim()) return;
+    setBusy(true);
+    try {
+      onMutate(await api.answerQuestion(runId, task.id, answer.trim()));
+      setAnswer("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
       <div className="flex items-start gap-3">
@@ -230,6 +392,11 @@ function TaskCard({ task }: { task: RunTask }) {
           <div className="flex items-center justify-between gap-3">
             <span className="font-display text-[14px] font-semibold">{name}</span>
             <div className="flex items-center gap-2.5">
+              {task.costUsd > 0 && (
+                <span className="font-mono text-[10px] tabular text-[var(--color-fg-faint)]">
+                  ${task.costUsd.toFixed(3)}
+                </span>
+              )}
               {task.revisionRound > 0 && (
                 <span className="rounded-md bg-[var(--color-surface-2)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--color-fg-subtle)]">
                   коло {task.revisionRound}
@@ -238,9 +405,98 @@ function TaskCard({ task }: { task: RunTask }) {
               <TaskStatusBadge status={task.status} />
             </div>
           </div>
-          <p className="mt-1 text-[13px] leading-relaxed text-[var(--color-fg-muted)]">
-            {task.description}
-          </p>
+
+          {/* Опис (редагований у режимі плану) */}
+          {editing ? (
+            <div className="mt-2">
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                rows={2}
+                className="w-full resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-base)] px-3 py-2 text-[13px] text-[var(--color-fg)] focus:border-[var(--color-honey)]/50 focus:outline-none"
+              />
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  onClick={saveEdit}
+                  disabled={busy}
+                  className="rounded-lg bg-[var(--color-honey)] px-3 py-1.5 text-[12px] font-semibold text-[var(--color-ink)] disabled:opacity-60"
+                >
+                  Зберегти
+                </button>
+                <button
+                  onClick={() => {
+                    setDraft(task.description);
+                    setEditing(false);
+                  }}
+                  className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-[12px] text-[var(--color-fg-muted)]"
+                >
+                  Скасувати
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-1 text-[13px] leading-relaxed text-[var(--color-fg-muted)]">
+              {task.description}
+            </p>
+          )}
+
+          {/* Інструменти редагування плану */}
+          {editable && !editing && (
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <select
+                value={task.agentSlug}
+                disabled={busy}
+                onChange={(e) => reassign(e.target.value)}
+                className="rounded-lg border border-[var(--color-border)] bg-[var(--color-base)] px-2.5 py-1.5 text-[12px] text-[var(--color-fg-muted)] focus:border-[var(--color-honey)]/50 focus:outline-none"
+              >
+                {executors.map((a) => (
+                  <option key={a.slug} value={a.slug}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={() => setEditing(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-[12px] text-[var(--color-fg-muted)] transition-colors hover:text-[var(--color-fg)]"
+              >
+                <PencilIcon width={13} height={13} /> Редагувати
+              </button>
+              <button
+                onClick={remove}
+                disabled={busy}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-[12px] text-[var(--color-fg-muted)] transition-colors hover:border-[var(--color-danger)]/40 hover:text-[var(--color-danger)] disabled:opacity-60"
+              >
+                <TrashIcon width={13} height={13} /> Видалити
+              </button>
+            </div>
+          )}
+
+          {/* Уточнювальне питання → відповідь власника */}
+          {task.status === "waiting_question" && task.question && (
+            <div className="mt-2.5 rounded-lg border border-[var(--color-honey)]/30 bg-[var(--color-honey)]/[0.07] p-3">
+              <p className="text-[12.5px] text-[var(--color-fg-muted)]">
+                <span className="font-medium text-[var(--color-honey)]">Питання:</span>{" "}
+                {task.question}
+              </p>
+              <div className="mt-2 flex items-end gap-2">
+                <textarea
+                  value={answer}
+                  onChange={(e) => setAnswer(e.target.value)}
+                  rows={2}
+                  placeholder="Твоя відповідь виконавцю…"
+                  className="flex-1 resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-base)] px-3 py-2 text-[13px] text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:border-[var(--color-honey)]/50 focus:outline-none"
+                />
+                <button
+                  onClick={sendAnswer}
+                  disabled={busy || !answer.trim()}
+                  aria-label="Надіслати відповідь"
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--color-honey)] text-[var(--color-ink)] transition-colors hover:bg-[var(--color-honey-bright)] disabled:opacity-60"
+                >
+                  <SendIcon width={16} height={16} />
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Вердикт Критика */}
           {task.criticVerdict && (
@@ -262,9 +518,7 @@ function TaskCard({ task }: { task: RunTask }) {
                 }}
               >
                 Критик:{" "}
-                {task.criticVerdict === "approved"
-                  ? "схвалено"
-                  : "на доопрацювання"}
+                {task.criticVerdict === "approved" ? "схвалено" : "на доопрацювання"}
               </span>
               {task.criticComment && <> — {task.criticComment}</>}
             </div>
@@ -280,12 +534,15 @@ function TaskCard({ task }: { task: RunTask }) {
           {/* Результат */}
           {task.result && (
             <div className="mt-3">
-              <button
-                onClick={() => setOpen((v) => !v)}
-                className="text-[12px] font-medium text-[var(--color-honey)] hover:text-[var(--color-honey-bright)]"
-              >
-                {open ? "Згорнути результат ↑" : "Показати результат ↓"}
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setOpen((v) => !v)}
+                  className="text-[12px] font-medium text-[var(--color-honey)] hover:text-[var(--color-honey-bright)]"
+                >
+                  {open ? "Згорнути результат ↑" : "Показати результат ↓"}
+                </button>
+                <CopyButton text={task.result} />
+              </div>
               {open && (
                 <div className="mt-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-base)] p-4">
                   <Markdown>{task.result}</Markdown>

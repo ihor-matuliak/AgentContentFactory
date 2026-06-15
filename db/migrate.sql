@@ -91,3 +91,57 @@ CREATE INDEX IF NOT EXISTS idx_tasks_run     ON tasks (run_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_tasks_status  ON tasks (status);
 CREATE INDEX IF NOT EXISTS idx_events_unread ON events (is_read, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_activity_run  ON activity_log (run_id, created_at);
+
+-- ════════════════════════ Фаза 4: фабрика контенту ════════════════════════════
+-- Усе так само ідемпотентне: повторний запуск нічого не втрачає.
+
+-- ── Профіль проєкту: єдиний бренд-контекст (один рядок, id = 1). ──
+-- Домішується до характеру кожного агента перед кожним запитом до Claude.
+-- Назва колонки тону — `tone_of_voice` (узгоджено з наявною схемою на машині).
+CREATE TABLE IF NOT EXISTS project_profile (
+    id            INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    business      TEXT NOT NULL DEFAULT '',
+    audience      TEXT NOT NULL DEFAULT '',
+    products      TEXT NOT NULL DEFAULT '',
+    tone_of_voice TEXT NOT NULL DEFAULT '',
+    taboos        TEXT NOT NULL DEFAULT '',
+    examples      TEXT NOT NULL DEFAULT '',
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Гарантуємо наявність єдиного рядка профілю.
+INSERT INTO project_profile (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+-- ── Чернетки контенту: результат схваленого завдання-публікації. ──
+CREATE TABLE IF NOT EXISTS content_drafts (
+    id         SERIAL PRIMARY KEY,
+    run_id     INTEGER REFERENCES runs(id) ON DELETE SET NULL,
+    task_id    INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    agent_slug TEXT NOT NULL DEFAULT '',
+    platform   TEXT NOT NULL DEFAULT 'other',
+    title      TEXT NOT NULL DEFAULT '',
+    body       TEXT NOT NULL DEFAULT '',
+    status     TEXT NOT NULL DEFAULT 'draft',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- На наявній таблиці без agent_slug — додаємо колонку (additive, без втрати даних).
+ALTER TABLE content_drafts ADD COLUMN IF NOT EXISTS agent_slug TEXT NOT NULL DEFAULT '';
+
+-- ── Контент-план: що і коли публікуємо на майданчиках. ──
+-- scheduled_for — TIMESTAMPTZ (узгоджено з наявною схемою); у коді нормалізуємо
+-- до полудня UTC, щоб дата не «з'їжджала» на день при різних часових поясах.
+CREATE TABLE IF NOT EXISTS content_plan (
+    id            SERIAL PRIMARY KEY,
+    draft_id      INTEGER REFERENCES content_drafts(id) ON DELETE SET NULL,
+    run_id        INTEGER REFERENCES runs(id) ON DELETE SET NULL,
+    platform      TEXT NOT NULL DEFAULT 'other',
+    title         TEXT NOT NULL DEFAULT '',
+    notes         TEXT NOT NULL DEFAULT '',
+    scheduled_for TIMESTAMPTZ,
+    status        TEXT NOT NULL DEFAULT 'planned',
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_content_plan_date ON content_plan (scheduled_for);
+CREATE INDEX IF NOT EXISTS idx_drafts_run        ON content_drafts (run_id);

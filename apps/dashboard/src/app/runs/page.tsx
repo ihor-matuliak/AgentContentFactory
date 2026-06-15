@@ -23,6 +23,7 @@ export default function RunsPage() {
   const [loaded, setLoaded] = useState(false);
   const [goal, setGoal] = useState("");
   const [bigRun, setBigRun] = useState(false);
+  const [budget, setBudget] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,7 +51,12 @@ export default function RunsPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const run = await api.createRun(text, bigRun ? "large" : undefined);
+      const budgetUsd = Number(budget);
+      const run = await api.createRun(
+        text,
+        bigRun ? "large" : undefined,
+        budget.trim() && budgetUsd > 0 ? budgetUsd : undefined,
+      );
       router.push(`/runs/${run.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не вдалося запустити прогін");
@@ -83,15 +89,29 @@ export default function RunsPage() {
             className="w-full resize-none rounded-xl border border-[var(--color-border)] bg-[var(--color-base)] px-4 py-3 text-[14px] text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:border-[var(--color-honey)]/50 focus:outline-none"
           />
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-            <label className="flex cursor-pointer items-center gap-2 text-[13px] text-[var(--color-fg-muted)]">
-              <input
-                type="checkbox"
-                checked={bigRun}
-                onChange={(e) => setBigRun(e.target.checked)}
-                className="h-4 w-4 accent-[var(--color-honey)]"
-              />
-              Великий прогін — спершу показати план на схвалення
-            </label>
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="flex cursor-pointer items-center gap-2 text-[13px] text-[var(--color-fg-muted)]">
+                <input
+                  type="checkbox"
+                  checked={bigRun}
+                  onChange={(e) => setBigRun(e.target.checked)}
+                  className="h-4 w-4 accent-[var(--color-honey)]"
+                />
+                Великий прогін — спершу показати план на схвалення
+              </label>
+              <label className="flex items-center gap-2 text-[13px] text-[var(--color-fg-muted)]">
+                <span>Бюджет, $</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.05"
+                  value={budget}
+                  onChange={(e) => setBudget(e.target.value)}
+                  placeholder="без ліміту"
+                  className="w-28 rounded-lg border border-[var(--color-border)] bg-[var(--color-base)] px-2.5 py-1.5 font-mono text-[12px] text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:border-[var(--color-honey)]/50 focus:outline-none"
+                />
+              </label>
+            </div>
             <button
               type="submit"
               disabled={!goal.trim() || submitting}

@@ -1,4 +1,4 @@
-import type { AgentStatus, RunStatus, TaskStatus } from "@swarm/shared";
+import type { AgentStatus, Platform, RunStatus, TaskStatus } from "@swarm/shared";
 import type { ReactNode } from "react";
 
 /** Заголовок сторінки з підзаголовком і слотом праворуч. */
@@ -90,6 +90,7 @@ export function RunStatusBadge({ status }: { status: RunStatus }) {
 const TASK_STATUS_META: Record<TaskStatus, { label: string; color: string }> = {
   pending: { label: "У черзі", color: "var(--color-fg-subtle)" },
   in_progress: { label: "Працює", color: "var(--color-busy)" },
+  waiting_question: { label: "Чекає відповіді", color: "var(--color-honey)" },
   done: { label: "Готово", color: "var(--color-info)" },
   approved: { label: "Схвалено", color: "var(--color-online)" },
   failed: { label: "Помилка", color: "var(--color-danger)" },
@@ -124,6 +125,27 @@ export function ProgressBar({ done, total }: { done: number; total: number }) {
         {done}/{total}
       </span>
     </div>
+  );
+}
+
+const PLATFORM_META: Record<Platform, { label: string; fg: string; bg: string }> = {
+  youtube: { label: "YouTube", fg: "#ff6b6b", bg: "rgba(255,107,107,0.12)" },
+  telegram: { label: "Telegram", fg: "#56b6f7", bg: "rgba(86,182,247,0.12)" },
+  instagram: { label: "Instagram", fg: "#e879c8", bg: "rgba(232,121,200,0.12)" },
+  other: { label: "Інше", fg: "var(--color-fg-muted)", bg: "rgba(139,149,172,0.12)" },
+};
+
+/** Пігулка майданчика публікації. */
+export function PlatformBadge({ platform }: { platform: Platform }) {
+  const meta = PLATFORM_META[platform] ?? PLATFORM_META.other;
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium"
+      style={{ color: meta.fg, backgroundColor: meta.bg }}
+    >
+      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: meta.fg }} />
+      {meta.label}
+    </span>
   );
 }
 

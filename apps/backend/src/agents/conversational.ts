@@ -1,6 +1,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Agent, ChatMessage } from "@swarm/shared";
 import { env } from "../env.js";
+import { withProfile } from "../profile.js";
 
 /** Ознаки того, що SDK не зміг автентифікуватися в Claude. */
 function looksLikeAuthError(text: string): boolean {
@@ -36,7 +37,8 @@ export async function generateAgentReply(
   const response = query({
     prompt,
     options: {
-      systemPrompt: agent.systemPrompt,
+      // Домішуємо бренд-контекст проєкту до характеру агента.
+      systemPrompt: await withProfile(agent.systemPrompt),
       model: env.anthropicModel,
       // Розмова без інструментів і файлової системи — чистий діалог.
       maxTurns: 1,

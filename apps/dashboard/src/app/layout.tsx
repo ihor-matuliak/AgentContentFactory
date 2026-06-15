@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import { Sidebar } from "@/components/Sidebar";
+import { AuthGate } from "@/components/AuthGate";
 import "./globals.css";
 
 const spaceGrotesk = Space_Grotesk({
@@ -38,10 +39,12 @@ export default function RootLayout({
       <body
         className={`${spaceGrotesk.variable} ${inter.variable} ${jetbrains.variable}`}
       >
-        <div className="relative z-[1] flex min-h-dvh">
-          <Sidebar />
-          <main className="min-w-0 flex-1">{children}</main>
-        </div>
+        <AuthGate>
+          <div className="relative z-[1] flex min-h-dvh">
+            <Sidebar />
+            <main className="min-w-0 flex-1">{children}</main>
+          </div>
+        </AuthGate>
       </body>
     </html>
   );

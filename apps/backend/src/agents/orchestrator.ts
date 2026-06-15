@@ -12,6 +12,7 @@ import {
   setRunStatus,
   setRunSummary,
   setTaskCritique,
+  setTaskQuestion,
   setTaskResult,
   setTaskStatus,
 } from "../store.js";
@@ -295,6 +296,11 @@ export async function executeTask(taskId: number): Promise<void> {
     : "";
 
   const revisionBlock = buildRevisionNote(task);
+  // Якщо завдання відновлюється після відповіді власника — додаємо її в контекст.
+  const answerBlock =
+    task.question && task.answer
+      ? `\n\nТи раніше запитав власника: «${task.question}»\nВідповідь власника: «${task.answer}»\nВрахуй її та виконай завдання повністю.`
+      : "";
 
   const tools = buildTaskTools({
     runId: task.runId,
@@ -304,9 +310,9 @@ export async function executeTask(taskId: number): Promise<void> {
 
   const prompt = `Загальна ціль прогону: «${run.goal}»
 
-Твоє завдання: ${task.description}${depsBlock}${revisionBlock}
+Твоє завдання: ${task.description}${depsBlock}${revisionBlock}${answerBlock}
 
-Зроби роботу й здай готовий результат через інструмент submit_deliverable (повний матеріал у Markdown). За потреби фіксуй кроки через record_progress.`;
+Зроби роботу й здай готовий результат через інструмент submit_deliverable (повний матеріал у Markdown). За потреби фіксуй кроки через record_progress. Якщо без уточнення від власника якісно виконати неможливо — постав ОДНЕ питання через ask_owner (лише за реальної потреби).`;
 
   let result: string;
   try {
@@ -317,6 +323,25 @@ export async function executeTask(taskId: number): Promise<void> {
       allowedTools: tools.allowedTools,
     });
     await accrue(task.runId, taskId, usage);
+
+    // Виконавець поставив уточнювальне питання й нічого не здав → пауза.
+    const question = tools.getQuestion();
+    if (question && !tools.getDeliverable()) {
+      await setTaskQuestion(taskId, question);
+      await logActivity(task.runId, task.agentSlug, "waiting for answer", question);
+      await addEvent(
+        "question_asked",
+        "Агент чекає на твою відповідь",
+        question,
+        task.runId,
+      );
+      await notifyOwner(
+        "❓ Агент рою має питання",
+        `${executor.name}: ${question}\nЦіль: ${run.goal}`,
+      );
+      return;
+    }
+
     result = tools.getDeliverable() ?? text;
   } catch (err) {
     await setTaskStatus(taskId, "failed");

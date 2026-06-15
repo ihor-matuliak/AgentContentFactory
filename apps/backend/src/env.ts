@@ -40,6 +40,10 @@ export const env = {
   /** Telegram-бот для сповіщень власника (необовʼязково). */
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN ?? "",
   telegramOwnerChatId: process.env.TELEGRAM_OWNER_CHAT_ID ?? "",
+  /** Таймаут одного виклику агента, мс (захист від «зависання» виконавця). */
+  agentTimeoutMs: Number(process.env.AGENT_TIMEOUT_MS ?? 180000),
+  /** Пароль на дашборд (порожній — авторизацію вимкнено). */
+  swarmPassword: process.env.SWARM_PASSWORD ?? "",
 } as const;
 
 /**

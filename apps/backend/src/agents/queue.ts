@@ -4,6 +4,7 @@ import {
   isOverBudget,
   listRunningRunIds,
   nextRunnableTask,
+  runHasBlockingTask,
   setRunStatus,
 } from "../store.js";
 import { executeTask, finalizeRun, planRun } from "./orchestrator.js";
@@ -68,6 +69,9 @@ async function step(): Promise<boolean> {
       await executeTask(task.id);
       return true;
     }
+    // Є завдання, що чекає на відповідь власника (або ще в роботі) → пауза,
+    // не фіналізуємо прогін. Переходимо до наступного прогону.
+    if (await runHasBlockingTask(runId)) continue;
     // Немає завдань, готових до виконання → прогін відпрацьовано.
     await finalizeRun(runId);
     return true;

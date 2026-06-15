@@ -1,4 +1,5 @@
 import type {
+  BoardTask,
   CriticVerdict,
   ReviewItem,
   Run,
@@ -347,4 +348,108 @@ export async function listReviewQueue(): Promise<ReviewItem[]> {
     items.push({ task: mapTask(row), run });
   }
   return items;
+}
+
+// ────────────────────── Фаза 4: уточнення, правки, дошка ──────────────────────
+
+/** Виставляє уточнювальне питання виконавця й переводить завдання в очікування. */
+export async function setTaskQuestion(id: number, question: string): Promise<void> {
+  await query(
+    `UPDATE tasks SET status = 'waiting_question', question = $2, updated_at = now()
+     WHERE id = $1`,
+    [id, question],
+  );
+}
+
+/** Власник відповів на уточнення → завдання повертається в чергу. */
+export async function answerTaskQuestion(id: number, answer: string): Promise<void> {
+  await query(
+    `UPDATE tasks SET status = 'pending', answer = $2, updated_at = now()
+     WHERE id = $1`,
+    [id, answer],
+  );
+}
+
+/** Чи має прогін завдання, що блокує фіналізацію (працює або чекає на відповідь). */
+export async function runHasBlockingTask(runId: number): Promise<boolean> {
+  const { rows } = await query<{ n: number }>(
+    `SELECT COUNT(*)::int AS n FROM tasks
+     WHERE run_id = $1 AND status IN ('in_progress', 'waiting_question')`,
+    [runId],
+  );
+  return Number(rows[0]?.n ?? 0) > 0;
+}
+
+/** Правка завдання власником (опис, виконавець, статус). */
+export async function updateTask(
+  id: number,
+  patch: { description?: string; agentSlug?: string; status?: TaskStatus },
+): Promise<RunTask | null> {
+  const sets: string[] = [];
+  const params: unknown[] = [id];
+  if (patch.description !== undefined) {
+    params.push(patch.description);
+    sets.push(`description = $${params.length}`);
+  }
+  if (patch.agentSlug !== undefined) {
+    params.push(patch.agentSlug);
+    sets.push(`agent_slug = $${params.length}`);
+  }
+  if (patch.status !== undefined) {
+    params.push(patch.status);
+    sets.push(`status = $${params.length}`);
+  }
+  if (sets.length === 0) return getTask(id);
+  await query(
+    `UPDATE tasks SET ${sets.join(", ")}, updated_at = now() WHERE id = $1`,
+    params,
+  );
+  return getTask(id);
+}
+
+export async function deleteTask(id: number): Promise<void> {
+  await query("DELETE FROM tasks WHERE id = $1", [id]);
+}
+
+/** Додає завдання у план прогону наступним за порядком. */
+export async function addTaskToRun(input: {
+  runId: number;
+  agentSlug: string;
+  description: string;
+  dependsOn?: number[];
+}): Promise<RunTask> {
+  const { rows: ord } = await query<{ next: number }>(
+    "SELECT COALESCE(MAX(sort_order) + 1, 0) AS next FROM tasks WHERE run_id = $1",
+    [input.runId],
+  );
+  const { rows } = await query<TaskRow>(
+    `INSERT INTO tasks (run_id, agent_slug, description, sort_order, depends_on)
+     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    [
+      input.runId,
+      input.agentSlug,
+      input.description,
+      Number(ord[0]?.next ?? 0),
+      input.dependsOn ?? [],
+    ],
+  );
+  return mapTask(rows[0]);
+}
+
+/** Усі завдання рою для дошки «Задачі» (із ціллю та статусом прогону). */
+export async function listBoardTasks(): Promise<BoardTask[]> {
+  const { rows } = await query<
+    TaskRow & { run_goal: string; run_status: string }
+  >(
+    `SELECT t.*, a.name AS agent_name, r.goal AS run_goal, r.status AS run_status
+     FROM tasks t
+     JOIN runs r ON r.id = t.run_id
+     LEFT JOIN agents a ON a.slug = t.agent_slug
+     ORDER BY t.updated_at DESC, t.id DESC`,
+  );
+  return rows.map((row) => ({
+    ...mapTask(row),
+    runGoal: row.run_goal,
+    runStatus: row.run_status as BoardTask["runStatus"],
+  }));
 }

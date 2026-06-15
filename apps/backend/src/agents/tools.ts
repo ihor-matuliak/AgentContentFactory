@@ -22,8 +22,11 @@ export function buildTaskTools(ctx: TaskToolContext): {
   allowedTools: string[];
   /** Останній зданий результат (через submit_deliverable), якщо був. */
   getDeliverable: () => string | null;
+  /** Уточнювальне питання до власника (через ask_owner), якщо було. */
+  getQuestion: () => string | null;
 } {
   let deliverable: string | null = null;
+  let question: string | null = null;
 
   const recordProgress = tool(
     "record_progress",
@@ -57,10 +60,32 @@ export function buildTaskTools(ctx: TaskToolContext): {
     },
   );
 
+  const askOwner = tool(
+    "ask_owner",
+    "Поставити власнику ОДНЕ уточнювальне питання, якщо без відповіді неможливо якісно виконати завдання. Використовуй лише за реальної потреби — це ставить завдання на паузу до відповіді власника.",
+    {
+      question: z
+        .string()
+        .describe("Чітке коротке питання до власника українською"),
+    },
+    async (args) => {
+      question = args.question;
+      await logActivity(ctx.runId, ctx.agentSlug, "asked owner", args.question);
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Питання надіслано власнику. Завдання на паузі до відповіді.",
+          },
+        ],
+      };
+    },
+  );
+
   const server = createSdkMcpServer({
     name: "swarm",
     version: "1.0.0",
-    tools: [recordProgress, submitDeliverable],
+    tools: [recordProgress, submitDeliverable, askOwner],
   });
 
   return {
@@ -68,7 +93,9 @@ export function buildTaskTools(ctx: TaskToolContext): {
     allowedTools: [
       "mcp__swarm__record_progress",
       "mcp__swarm__submit_deliverable",
+      "mcp__swarm__ask_owner",
     ],
     getDeliverable: () => deliverable,
+    getQuestion: () => question,
   };
 }

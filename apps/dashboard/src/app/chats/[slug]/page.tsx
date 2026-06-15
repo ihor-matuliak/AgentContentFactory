@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -16,7 +16,7 @@ import type { Components } from "react-markdown";
 import type { AgentSummary, ChatMessage } from "@swarm/shared";
 import { api } from "@/lib/api";
 import { AgentBadge, StatusBadge } from "@/components/ui";
-import { ArrowLeftIcon, SendIcon } from "@/components/icons";
+import { ArrowLeftIcon, PlayIcon, SendIcon } from "@/components/icons";
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("uk-UA", {
@@ -28,11 +28,14 @@ function formatTime(iso: string): string {
 export default function ChatPage() {
   const params = useParams<{ slug: string }>();
   const slug = params.slug;
+  const router = useRouter();
+  const isStrategist = slug === "strategist";
 
   const [agent, setAgent] = useState<AgentSummary | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [launching, setLaunching] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -126,6 +129,27 @@ export default function ChatPage() {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void handleSend();
+    }
+  }
+
+  // Запуск прогону рою прямо з чату зі Стратегом: ціль = текст у полі або
+  // останнє повідомлення користувача.
+  async function launchRun() {
+    if (launching) return;
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    const goalText = input.trim() || lastUser?.content?.trim() || "";
+    if (!goalText) {
+      setError("Напиши ціль у полі або в повідомленні — і я запущу прогін.");
+      return;
+    }
+    setLaunching(true);
+    setError(null);
+    try {
+      const run = await api.createRun(goalText);
+      router.push(`/runs/${run.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не вдалося запустити прогін");
+      setLaunching(false);
     }
   }
 
@@ -226,9 +250,23 @@ export default function ChatPage() {
               <SendIcon width={18} height={18} />
             </button>
           </div>
-          <p className="mt-1.5 px-1 text-[11px] text-[var(--color-fg-subtle)]">
-            Enter — надіслати · Shift+Enter — новий рядок
-          </p>
+          <div className="mt-1.5 flex items-center justify-between gap-2 px-1">
+            <p className="text-[11px] text-[var(--color-fg-subtle)]">
+              Enter — надіслати · Shift+Enter — новий рядок
+            </p>
+            {isStrategist && (
+              <button
+                type="button"
+                onClick={launchRun}
+                disabled={launching}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-honey)]/40 px-3 py-1.5 text-[12px] font-medium text-[var(--color-honey)] transition-colors hover:bg-[var(--color-honey)]/10 disabled:opacity-60"
+                title="Створити прогін рою з цієї цілі"
+              >
+                <PlayIcon width={13} height={13} />
+                {launching ? "Запускаю…" : "Запустити прогін рою"}
+              </button>
+            )}
+          </div>
         </form>
       </div>
     </div>

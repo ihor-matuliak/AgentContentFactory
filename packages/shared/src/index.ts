@@ -88,6 +88,7 @@ export type RunStatus =
  * Статус завдання на дошці:
  * - `pending` — чекає черги (можливо, на залежності);
  * - `in_progress` — виконавець працює або результат у Критика;
+ * - `waiting_question` — виконавець поставив уточнювальне питання й чекає на відповідь власника;
  * - `done` — результат прийнято Критиком, чекає на перевірку власника;
  * - `approved` — власник схвалив результат;
  * - `failed` — не вдалося виконати.
@@ -95,6 +96,7 @@ export type RunStatus =
 export type TaskStatus =
   | "pending"
   | "in_progress"
+  | "waiting_question"
   | "done"
   | "approved"
   | "failed";
@@ -111,7 +113,9 @@ export type SwarmEventType =
   | "revision_requested"
   | "run_review"
   | "run_completed"
-  | "run_failed";
+  | "run_failed"
+  | "question_asked"
+  | "draft_created";
 
 /** Прогін рою (рядок таблиці `runs`). */
 export interface Run {
@@ -221,4 +225,99 @@ export interface CreateRunRequest {
 export interface ReviewDecisionRequest {
   decision: "approve" | "rework";
   comment?: string;
+}
+
+// ──────────────────────────── Фаза 4: фабрика контенту ───────────────────────
+
+/** Майданчик публікації. */
+export type Platform = "youtube" | "telegram" | "instagram" | "other";
+
+/** Профіль проєкту — єдиний бренд-контекст (рядок таблиці `project_profile`). */
+export interface ProjectProfile {
+  /** Чим займається бізнес. */
+  business: string;
+  /** Цільова аудиторія. */
+  audience: string;
+  /** Продукти/послуги. */
+  products: string;
+  /** Бажаний тон і голос бренду. */
+  tone: string;
+  /** Табу — чого уникати. */
+  taboos: string;
+  /** Приклади вдалого контенту/формулювань. */
+  examples: string;
+  updatedAt: string;
+}
+
+/** Тіло запиту PUT /api/profile. */
+export type SaveProfileRequest = Omit<ProjectProfile, "updatedAt">;
+
+/** Статус чернетки контенту. */
+export type DraftStatus = "draft" | "scheduled" | "published";
+
+/** Чернетка контенту (рядок таблиці `content_drafts`). */
+export interface ContentDraft {
+  id: number;
+  runId: number | null;
+  taskId: number | null;
+  agentSlug: string;
+  platform: Platform;
+  title: string;
+  body: string;
+  status: DraftStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Статус елемента контент-плану. */
+export type ContentPlanStatus = "planned" | "published";
+
+/** Елемент контент-плану (рядок таблиці `content_plan`). */
+export interface ContentPlanItem {
+  id: number;
+  draftId: number | null;
+  runId: number | null;
+  platform: Platform;
+  title: string;
+  notes: string;
+  /** ISO-дата (YYYY-MM-DD) запланованої публікації, або null. */
+  scheduledFor: string | null;
+  status: ContentPlanStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Завдання для дошки «Задачі» разом із контекстом прогону. */
+export interface BoardTask extends RunTask {
+  runGoal: string;
+  runStatus: RunStatus;
+}
+
+/** Тіло запиту PATCH /api/runs/:id/tasks/:taskId — правка завдання власником. */
+export interface UpdateTaskRequest {
+  description?: string;
+  agentSlug?: string;
+  status?: TaskStatus;
+}
+
+/** Тіло запиту POST /api/runs/:id/tasks — додати завдання у план. */
+export interface AddTaskRequest {
+  description: string;
+  agentSlug: string;
+  dependsOn?: number[];
+}
+
+/** Тіло запиту POST /api/runs/:id/tasks/:taskId/answer — відповідь на уточнення. */
+export interface AnswerQuestionRequest {
+  answer: string;
+}
+
+/** Відповідь GET /api/auth — чи ввімкнено захист паролем. */
+export interface AuthStatusResponse {
+  required: boolean;
+}
+
+/** Тіло запиту POST /api/auth/login. */
+export interface LoginRequest {
+  password: string;
 }
