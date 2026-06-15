@@ -13,13 +13,19 @@ import { ideasRouter } from "./routes/ideas.js";
 import { testsRouter } from "./routes/tests.js";
 import { publishRouter } from "./routes/publish.js";
 import { authEnabled, authRouter, requireAuth } from "./routes/auth.js";
+import { accountRouter } from "./routes/account.js";
 import { resumeQueue } from "./agents/queue.js";
 import { startTelegramPolling } from "./telegram.js";
+import { UPLOADS_DIR } from "./knowledge.js";
 
 const app = express();
 
 app.use(cors({ allowedHeaders: ["Content-Type", "x-swarm-password"] }));
 app.use(express.json({ limit: "2mb" }));
+
+// Завантажені зображення бази знань — публічно (теги <img> не шлють заголовків
+// авторизації). Лежать поза /api, тож requireAuth їх не зачіпає.
+app.use("/uploads", express.static(UPLOADS_DIR));
 
 /** GET /api/health — перевірка стану бекенду (публічно). */
 app.get("/api/health", (_req, res) => {
@@ -45,6 +51,7 @@ app.use("/api/content-plan", publishRouter);
 app.use("/api/knowledge", knowledgeRouter);
 app.use("/api/ideas", ideasRouter);
 app.use("/api/tests", testsRouter);
+app.use("/api/account", accountRouter);
 
 app.listen(env.backendPort, () => {
   console.log(`🚀 Бекенд рою слухає на http://localhost:${env.backendPort}`);

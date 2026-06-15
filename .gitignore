@@ -48,3 +48,6 @@ Thumbs.db
 .agents/
 .claude/
 design_example/
+
+# Завантажені файли бази знань
+uploads/

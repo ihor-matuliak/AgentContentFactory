@@ -324,6 +324,11 @@ export async function executeTask(taskId: number): Promise<void> {
       allowedTools: tools.allowedTools,
       projectId: run.projectId,
       contextQuery: task.description,
+      agentSlug: task.agentSlug,
+      // Щойно виконавець здає результат — перериваємо генерацію (Дизайнер/
+      // Монтажер інакше марнують десятки секунд на зайву «післямову» й ловлять
+      // таймаут, попри вже готовий deliverable).
+      stopOnTools: ["mcp__swarm__submit_deliverable"],
     });
     await accrue(task.runId, taskId, usage);
 
@@ -347,14 +352,27 @@ export async function executeTask(taskId: number): Promise<void> {
 
     result = tools.getDeliverable() ?? text;
   } catch (err) {
-    await setTaskStatus(taskId, "failed");
-    await logActivity(
-      task.runId,
-      "system",
-      "task failed",
-      err instanceof Error ? err.message : String(err),
-    );
-    return;
+    // Рятувальна мережа: якщо агент уже здав deliverable (а впав/спіймав
+    // таймаут на зайвій генерації опісля) — не втрачаємо роботу, беремо її.
+    const salvaged = tools.getDeliverable();
+    if (salvaged) {
+      result = salvaged;
+      await logActivity(
+        task.runId,
+        task.agentSlug,
+        "salvaged deliverable after error",
+        err instanceof Error ? err.message : String(err),
+      );
+    } else {
+      await setTaskStatus(taskId, "failed");
+      await logActivity(
+        task.runId,
+        "system",
+        "task failed",
+        err instanceof Error ? err.message : String(err),
+      );
+      return;
+    }
   }
 
   await setTaskResult(taskId, result);
@@ -408,6 +426,7 @@ ${task.result}
       prompt,
       projectId: run.projectId,
       contextQuery: task.description,
+      agentSlug: "critic",
     });
     await accrue(task.runId, taskId, usage);
     const parsed = extractJson(text) as { verdict?: string; comment?: string };
@@ -475,6 +494,7 @@ ${block}
         prompt,
         projectId: run.projectId,
         contextQuery: run.goal,
+        agentSlug: "strategist",
       });
       await accrue(runId, null, usage);
       summary = text;

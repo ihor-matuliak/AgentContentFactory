@@ -238,6 +238,34 @@ export const UploadIcon = (p: SVGProps<SVGSVGElement>) => (
   </Icon>
 );
 
+/** Документ — для вкладки «Документи». */
+export const DocumentIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M6 2.5h7.5L19 8v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1z" />
+    <path d="M13 2.5V8h5" />
+    <path d="M8.5 13h7M8.5 16.5h5" />
+  </Icon>
+);
+
+/** Фото/зображення — для вкладки «Фото для обкладинок». */
+export const PhotoIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <rect x="3" y="4.5" width="18" height="15" rx="2" />
+    <circle cx="8.5" cy="9.5" r="1.6" />
+    <path d="m4 17 4.5-4.5 3.5 3.5L15 13l5 5" />
+  </Icon>
+);
+
+/** Палітра — для вкладки «Референси стилю». */
+export const PaletteIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M12 3a9 9 0 1 0 0 18c1.4 0 2-.9 2-1.8 0-.5-.2-.9-.5-1.2-.3-.4-.5-.8-.5-1.3 0-1 .8-1.7 1.8-1.7H16a5 5 0 0 0 5-5c0-3.9-4-7-9-7z" />
+    <circle cx="7.5" cy="11" r="1" />
+    <circle cx="12" cy="7.5" r="1" />
+    <circle cx="16.5" cy="11" r="1" />
+  </Icon>
+);
+
 export const SwarmDelegateIcon = (p: SVGProps<SVGSVGElement>) => (
   <Icon {...p}>
     <circle cx="6" cy="7" r="2.5" />

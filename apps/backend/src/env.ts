@@ -24,6 +24,7 @@ function required(name: string, fallback?: string): string {
 // автентифікацію (claude /login) як запасний шлях.
 if (!process.env.CLAUDE_CODE_OAUTH_TOKEN) delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
 if (!process.env.ANTHROPIC_API_KEY) delete process.env.ANTHROPIC_API_KEY;
+if (!process.env.GEMINI_API_KEY) delete process.env.GEMINI_API_KEY;
 
 export const env = {
   databaseUrl: required(
@@ -37,6 +38,8 @@ export const env = {
   claudeOAuthToken: process.env.CLAUDE_CODE_OAUTH_TOKEN ?? "",
   /** API-ключ Anthropic (резервний шлях доступу). */
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
+  /** API-ключ Gemini. */
+  geminiApiKey: process.env.GEMINI_API_KEY ?? "",
   /** Telegram-бот для сповіщень власника (необовʼязково). */
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN ?? "",
   telegramOwnerChatId: process.env.TELEGRAM_OWNER_CHAT_ID ?? "",
@@ -45,6 +48,7 @@ export const env = {
   /** Пароль на дашборд (порожній — авторизацію вимкнено). */
   swarmPassword: process.env.SWARM_PASSWORD ?? "",
 } as const;
+
 
 /**
  * Чи задано явні креденшали Claude у .env.

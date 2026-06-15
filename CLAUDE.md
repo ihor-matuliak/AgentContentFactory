@@ -8,10 +8,10 @@
 ## Стек технологій
 - **Архітектура:** Монорепозиторій на базі npm workspaces (`apps/*`, `packages/*`)
 - **Дашборд (Фронтенд):** Next.js 16 (App Router, Turbopack) + React 19 + Tailwind CSS 4 — `apps/dashboard` (`@swarm/dashboard`), порт **3000**
-- **Бекенд:** Node.js + Express 5 + tsx (TypeScript Execute), `pg` — `apps/backend` (`@swarm/backend`), порт **4000**
+- **Бекенд:** Node.js + Express 5 + tsx (TypeScript Execute), `pg`, `multer` (завантаження файлів у Базу знань), `pdf-parse` (текст із PDF) — `apps/backend` (`@swarm/backend`), порт **4000**
 - **Спільні типи:** `packages/shared` (`@swarm/shared`) — TS-типи `Agent`, `ChatMessage`, прогонів рою (`Run`, `RunTask`, `SwarmEvent`, `ActivityEntry`, `ReviewItem`…) і фабрики контенту (`ProjectProfile`, `ContentDraft`, `ContentPlanItem`, `Platform`, `BoardTask`, `UpdateTaskRequest`, `AuthStatusResponse`…) + запити/відповіді API
 - **База даних:** PostgreSQL 16 — база `ai_agent_swarm`, роль/пароль `swarm`/`swarm`, порт 5432
-- **Агенти:** Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`), модель `claude-sonnet-4-6`; інструменти агентів — через zod + вбудований MCP-сервер SDK
+- **Агенти:** Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`) для моделі `claude-sonnet-4-6` та Google Gen AI SDK (`@google/genai`) для моделі `gemini-3-1-flash-lite`. Інструменти агентів (MCP, zod) підтримуються в обох моделях. Глобальний вибір активної моделі зберігається в таблиці `system_settings` і перемикається без перезапуску сервера.
 
 ## Структура репозиторію
 - `apps/dashboard` — фронтенд:
@@ -19,7 +19,8 @@
   - `src/components/` — `Sidebar.tsx` (лічильник сповіщень), `ui.tsx` (бейджі статусів/платформ, прогрес-бар), `icons.tsx`, `Markdown.tsx`, `CopyButton.tsx`, `AuthGate.tsx` (захист паролем)
   - `src/lib/api.ts` — клієнт бекенду (адреса з `NEXT_PUBLIC_BACKEND_URL`; шле заголовок `x-swarm-password`)
 - `apps/backend` — бекенд:
-  - `src/index.ts` — Express-застосунок, `GET /api/health`, публічний `/api/auth`, далі `requireAuth` + роутери `/api/agents`, `/api/runs`, `/api/events`, `/api/profile`, `/api/content`; на старті — `resumeQueue`
+  - `src/index.ts` — Express-застосунок, `GET /api/health`, публічний `/api/auth`, далі `requireAuth` + роутери `/api/projects`, `/api/agents`, `/api/runs`, `/api/events`, `/api/profile`, `/api/content`, `/api/account`; на старті — `resumeQueue`
+  - `src/routes/account.ts` — роутер налаштувань акаунту (вибір активної моделі ШІ)
   - `src/routes/agents.ts` — список агентів, історія, чат
   - `src/routes/runs.ts` — прогони: створення/список/деталі, схвалення плану, рішення на перевірці, `repeat`, правка/додавання/видалення завдань, `answer` на уточнення
   - `src/routes/events.ts` — сповіщення + лічильник
@@ -36,7 +37,7 @@
   - `src/notify.ts` — Telegram-сповіщення; `src/scripts/telegram-chat-id.ts`
   - `src/env.ts`, `src/db.ts`
 - `packages/shared` — спільні TS-типи
-- `db/` — `schema.sql`, `seed.sql`, `migrate.sql` (безпечна ідемпотентна міграція Фаз 3–4) + скрипти `setup.sh` / `seed.sh` / `migrate.sh` / `reset.sh` / `backup.sh`
+- `db/` — `schema.sql`, `seed.sql`, `migrate.sql` (безпечна ідемпотентна міграція Фаз 3–4), `migrate_gemini.sql` (таблиця налаштувань ШІ) та `migrate_knowledge_v2.sql` (Базі знань: `source_type` + `visible_to_agents` у `knowledge_sources`) + скрипти `setup.sh` / `seed.sh` / `migrate.sh` (застосовує всі три міграції по черзі) / `reset.sh` / `backup.sh`
 
 ## Агенти та їхні «характери»
 **Характери (особистості) агентів живуть у `db/seed.sql`, а не в коді.** Системний промпт із бази визначає тон і поведінку агента; обробник у `handlers.ts` лише обирає рушій (зараз — спільний `conversational.ts`). Щоб переписати будь-який характер: відредагуй промпт у `db/seed.sql` і виконай `npm run db:seed` — це **UPSERT за `slug`**, він оновлює дані агентів і **не стирає історію чатів**.
@@ -62,9 +63,13 @@
 ## Платформа: мультипроєкти + інтеграції (Фаза 5)
 - **Мультипроєкти:** таблиця `projects`; до проєкту прив'язано **все** через `project_id` (`runs`, `chat_messages`, `content_drafts`, `content_plan`, `events`) + пер-проєктний профіль `project_profiles` (нова таблиця; старий однорядковий `project_profile` лишився, його дані перенесено в профіль першого проєкту). Агенти **спільні** для всіх проєктів; різниться лише контекст. Backfill міграцією приписав наявні дані до першого демопроєкту (`ai-proryv` «AI ПРОРИВ»).
   - **Навігація:** верхня (`TopNav`: Проєкти `/`, Інбокс ідей `/ideas`, Акаунт `/account`) + вкладені роути проєкту `/projects/[slug]/{,'',runs,review,calendar,tasks,chats,profile,knowledge,tests}`. `ProjectContext` вантажить проєкт за slug і дає `useProject()`; `ProjectSidebar` — бічне меню проєкту з лічильником. Усі скоуплені виклики API шлють `?projectId=N` (або в тілі).
-  - Скоупінг на бекенді: хелпер `routes/projectScope.ts → getProjectId(req)`; `src/projects.ts` (CRUD), `src/chat.ts` (чат скоуплений `(agent_id, project_id)`), `src/context.ts → augmentSystemPrompt({systemPrompt, projectId, query})` домішує профіль + знання в КОЖЕН виклик агента (`conversational.ts`, `runner.ts`).
+  - Скоупінг на бекенді: хелпер `routes/projectScope.ts → getProjectId(req)`; `src/projects.ts` (CRUD), `src/chat.ts` (чат скоуплений `(agent_id, project_id)`), `src/context.ts → augmentSystemPrompt({systemPrompt, projectId, query, agentSlug})` домішує профіль + знання в КОЖЕН виклик агента (`conversational.ts`, `runner.ts`). `agentSlug` потрібен для фільтра видимості знань (див. Базу знань).
 - **Прямі завдання агентам (Частина 2):** у чаті — «Поставити завдання» (`POST /api/runs/solo` — прогін одразу у `running` з одним завданням для агента, оминаючи планування), «Делегувати Стратегу» (`POST /api/runs` — планування), «Запустити прогін рою» (перехід на `/runs`).
-- **База знань (Частина 3):** `knowledge_sources` + `knowledge_chunks` (повнотекст через `tsvector`, конфіг `simple`, GIN-індекс). `src/knowledge.ts` (чанкінг, інгест тексту/теки, `searchKnowledge`, `getKnowledgeBlock`). Сторінка «Знання»: нотатка, інгест теки, пошук, список джерел. CLI `npm run knowledge:ingest -- --dir=…`.
+- **База знань (Частина 3 + v2):** `knowledge_sources` + `knowledge_chunks` (повнотекст через `tsvector`, конфіг `simple`, GIN-індекс). `src/knowledge.ts`: чанкінг, інгест тексту/теки/**файлів**, `searchKnowledge`, `getKnowledgeBlock`.
+  - **Категорії матеріалів (`source_type`):** `document` (текст/PDF — індексується у векторну базу), `cover_photo` (фото для прямого використання в обкладинках), `style_reference` (візуальні референси стилю). Зображення зберігаються файлами під `uploads/knowledge/` і віддаються статикою через `app.use("/uploads", …)` (публічно, поза `/api` — теги `<img>` не шлють заголовків авторизації); текст із них не парситься. Документи: текстові формати читаються як UTF-8, **PDF** — через `pdf-parse` (`ingestDocumentFile`); зображення — `ingestImageFile`.
+  - **Видимість для агентів (`visible_to_agents TEXT[]`):** `NULL`/порожньо = видно ВСІМ; інакше — лише переліченим slug-ам. `searchKnowledge(projectId, q, limit, agentSlug)` фільтрує: `visible_to_agents IS NULL OR agentSlug = ANY(...)`. `agentSlug` прокидається в `augmentSystemPrompt` із чату (`agent.slug`) і прогону (виконавець = `task.agentSlug`, Критик = `critic`, Стратег = `strategist`).
+  - **Завантаження файлів:** `POST /api/knowledge` (multipart через `multer`, memoryStorage, до 50 МБ/файл; поля `files[]`, `source_type`, `visible_to_agents`-JSON). `GET /api/knowledge?sourceType=…` повертає `{ sources, counts }` (лічильники по категоріях для вкладок). `GET /api/knowledge/search?…&agentSlug=…`. Нотатка/тека лишилися на `POST /api/knowledge/ingest`. CLI `npm run knowledge:ingest -- --dir=…`.
+  - **Сторінка «Знання»** (`/projects/[slug]/knowledge`): 3 вкладки з лічильниками (іконки, бурштинове підкреслення активної), динамічна дропзона (drag&drop + клік, тексти/формати залежать від вкладки), селектор видимості агентам (бейджі, тягнуться з `/api/agents`), велика кнопка дії, пошук (лише для документів), список — рядки для документів і сітка прев'ю для зображень. Стан вибраних файлів/агентів очищується при перемиканні вкладки. **Примітка:** селектор агентів використовує реальний склад рою (8 агентів із БД), а не приклад із ТЗ (там був неіснуючий `researcher`).
 - **Двосторонній Telegram (Частина 4):** `src/telegram.ts` — long-polling приймає повідомлення власника (за `TELEGRAM_OWNER_CHAT_ID`) і маршрутизує: текст → Стратег; `/agent <slug> …`, `/task …`, `/idea …`, `/project <slug>`. Активний проєкт — у пам'яті модуля (типово перший). Публікація: `POST /api/content-plan/:id/publish/telegram` (кнопка «У Telegram» у Календарі для записів-`telegram`); chat_id каналу — поле `telegram_channel` у профілі проєкту. Запускається з `index.ts` через `startTelegramPolling()` (тихо, якщо токен/owner порожні).
 - **Фабрика тестів (Частина 5):** `test_scenarios` (UNIQUE `agent_slug+title`) + `test_runs` (глобальні). `src/tests.ts`: `SEED_SCENARIOS`, `runScenario` (агент відповідає «голим» характером БЕЗ проєкт-контексту → Критик дає вердикт pass/fail+score), `runBatch`, `getOverview`. `npm run tests:seed`, `npm run tests:batch -- --limit=30`. Сторінка «Тести» — пас-рейт/вартість/час по агентах + останні прогони.
 - **Інбокс ідей (Частина 6):** `idea_inbox` (`project_id` nullable, `source` dashboard|telegram). `src/ideas.ts` + `/api/ideas`; сторінка `/ideas` (верхній рівень): додати/архівувати, «У прогін» (`POST /api/ideas/:id/convert` → створює прогін у проєкті ідеї/обраному). Ідеї також надходять через Telegram `/idea …`.
@@ -89,6 +94,7 @@
 - `DATABASE_URL` — підключення до PostgreSQL (типово `postgresql://swarm:swarm@localhost:5432/ai_agent_swarm`).
 - `BACKEND_PORT` (4000) та `NEXT_PUBLIC_BACKEND_URL` (адреса бекенду для дашборда).
 - Доступ до Claude (досить одного): `CLAUDE_CODE_OAUTH_TOKEN`, або `ANTHROPIC_API_KEY`, або збережений логін Claude Code. `ANTHROPIC_MODEL` (типово `claude-sonnet-4-6`).
+- Доступ до Gemini: `GEMINI_API_KEY` — API-ключ Google для моделі `gemini-3-1-flash-lite`.
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OWNER_CHAT_ID` — Telegram: сповіщення + двосторонній режим (long-polling) у Фазі 5, якщо задано обидва. chat_id каналу для публікацій — у профілі проєкту, не в `.env`.
 - `SWARM_PASSWORD` — пароль на дашборд (порожній → без авторизації).
 - `AGENT_TIMEOUT_MS` — таймаут одного виклику агента (типово 180000).

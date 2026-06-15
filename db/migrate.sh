@@ -18,4 +18,16 @@ echo "==> Застосування міграції до бази '$DB_NAME'…"
 PGPASSWORD="$DB_PASSWORD" psql -h "$HOST" -p "$PORT" \
   -U "$DB_ROLE" -d "$DB_NAME" -v ON_ERROR_STOP=1 -f "$SCRIPT_DIR/migrate.sql"
 
+if [ -f "$SCRIPT_DIR/migrate_gemini.sql" ]; then
+  echo "==> Застосування міграції Gemini…"
+  PGPASSWORD="$DB_PASSWORD" psql -h "$HOST" -p "$PORT" \
+    -U "$DB_ROLE" -d "$DB_NAME" -v ON_ERROR_STOP=1 -f "$SCRIPT_DIR/migrate_gemini.sql"
+fi
+
+if [ -f "$SCRIPT_DIR/migrate_knowledge_v2.sql" ]; then
+  echo "==> Застосування міграції Бази знань v2…"
+  PGPASSWORD="$DB_PASSWORD" psql -h "$HOST" -p "$PORT" \
+    -U "$DB_ROLE" -d "$DB_NAME" -v ON_ERROR_STOP=1 -f "$SCRIPT_DIR/migrate_knowledge_v2.sql"
+fi
+
 echo "✅ Міграцію застосовано (дані збережено)."

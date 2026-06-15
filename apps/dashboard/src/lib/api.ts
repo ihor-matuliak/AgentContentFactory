@@ -11,8 +11,10 @@ import type {
   HealthResponse,
   Idea,
   IngestResult,
+  KnowledgeListResponse,
   KnowledgeSearchHit,
-  KnowledgeSource,
+  KnowledgeSourceType,
+  UploadResult,
   Platform,
   Project,
   ProjectProfile,
@@ -23,11 +25,13 @@ import type {
   RunSummary,
   ReviewItem,
   SaveProfileRequest,
+  SettingsResponse,
   SwarmEvent,
   TaskStatus,
   TestsOverview,
   TestScenario,
   UpdateTaskRequest,
+  UpdateSettingsRequest,
 } from "@swarm/shared";
 
 const BACKEND_URL =
@@ -276,13 +280,49 @@ export const api = {
 
   // ── База знань ──
 
-  listKnowledge(projectId: number): Promise<KnowledgeSource[]> {
-    return request<KnowledgeSource[]>(withProject("/api/knowledge", projectId));
+  listKnowledge(
+    projectId: number,
+    sourceType?: KnowledgeSourceType,
+  ): Promise<KnowledgeListResponse> {
+    const path = sourceType
+      ? `/api/knowledge?sourceType=${sourceType}`
+      : "/api/knowledge";
+    return request<KnowledgeListResponse>(withProject(path, projectId));
   },
   searchKnowledge(projectId: number, q: string): Promise<KnowledgeSearchHit[]> {
     return request<KnowledgeSearchHit[]>(
       withProject(`/api/knowledge/search?q=${encodeURIComponent(q)}`, projectId),
     );
+  },
+  /** Завантаження файлів (multipart). Документи індексуються, зображення — зберігаються. */
+  async uploadKnowledge(
+    projectId: number,
+    files: File[],
+    sourceType: KnowledgeSourceType,
+    visibleToAgents: string[],
+  ): Promise<UploadResult> {
+    const form = new FormData();
+    for (const f of files) form.append("files", f);
+    form.append("source_type", sourceType);
+    form.append("visible_to_agents", JSON.stringify(visibleToAgents));
+    const pw = storedPassword();
+    const res = await fetch(`${BACKEND_URL}${withProject("/api/knowledge", projectId)}`, {
+      method: "POST",
+      body: form, // НЕ задаємо Content-Type — браузер додасть boundary сам.
+      headers: pw ? { "x-swarm-password": pw } : undefined,
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        const b = (await res.json()) as { error?: string };
+        if (b.error) detail = b.error;
+      } catch {
+        /* лишаємо statusText */
+      }
+      throw new Error(detail);
+    }
+    return res.json() as Promise<UploadResult>;
   },
   ingestText(projectId: number, text: string, title?: string): Promise<IngestResult> {
     return request<IngestResult>(withProject("/api/knowledge/ingest", projectId), {
@@ -354,6 +394,19 @@ export const api = {
   markAllEventsRead(projectId: number): Promise<{ unread: number }> {
     return request<{ unread: number }>(withProject("/api/events/read-all", projectId), {
       method: "POST",
+    });
+  },
+
+  // ── Налаштування акаунту ──
+
+  getSettings(): Promise<SettingsResponse> {
+    return request<SettingsResponse>("/api/account/settings");
+  },
+
+  updateSettings(data: UpdateSettingsRequest): Promise<SettingsResponse> {
+    return request<SettingsResponse>("/api/account/settings", {
+      method: "POST",
+      body: JSON.stringify(data),
     });
   },
 };

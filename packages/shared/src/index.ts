@@ -381,18 +381,53 @@ export interface CreateProjectRequest {
 /** Тип джерела знань. */
 export type KnowledgeKind = "note" | "file" | "reference";
 
+/**
+ * Категорія матеріалу бази знань (Фаза 5 v2):
+ *  • document        — текст/документ, що індексується у векторну базу;
+ *  • cover_photo     — зображення для прямого використання в обкладинках;
+ *  • style_reference — візуальний референс стилю для Дизайнера.
+ */
+export type KnowledgeSourceType = "document" | "cover_photo" | "style_reference";
+
+/** Усі категорії матеріалів — для вкладок/ітерації. */
+export const KNOWLEDGE_SOURCE_TYPES: readonly KnowledgeSourceType[] = [
+  "document",
+  "cover_photo",
+  "style_reference",
+] as const;
+
 /** Джерело знань проєкту (рядок таблиці `knowledge_sources`). */
 export interface KnowledgeSource {
   id: number;
   projectId: number;
   title: string;
   kind: KnowledgeKind;
+  /** Категорія матеріалу (вкладка). */
+  sourceType: KnowledgeSourceType;
+  /**
+   * Slug-и агентів, яким видно це джерело. Порожній масив = видно ВСІМ агентам
+   * проєкту (для зручності фронтенду NULL у БД нормалізуємо в []).
+   */
+  visibleToAgents: string[];
   /** Шлях до файлу або URL посилання. */
   path: string;
+  /** Публічний URL для зображень (cover_photo / style_reference) або "". */
+  url: string;
   bytes: number;
   chunkCount: number;
+  /** MIME-тип завантаженого файлу (для зображень) або "". */
+  mimeType: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Кількість джерел у кожній категорії — для лічильників на вкладках. */
+export type KnowledgeCounts = Record<KnowledgeSourceType, number>;
+
+/** Відповідь GET /api/knowledge: джерела (за фільтром) + лічильники по категоріях. */
+export interface KnowledgeListResponse {
+  sources: KnowledgeSource[];
+  counts: KnowledgeCounts;
 }
 
 /** Шматок (чанк) знань для повнотекстового пошуку (рядок `knowledge_chunks`). */
@@ -421,12 +456,24 @@ export interface IngestRequest {
   /** Або текст нотатки напряму. */
   text?: string;
   title?: string;
+  /** Кому видно нотатку (порожньо = всім). */
+  visibleToAgents?: string[];
 }
 
 /** Результат інгесту бази знань. */
 export interface IngestResult {
   sources: number;
   chunks: number;
+}
+
+/** Результат завантаження файлів (POST /api/knowledge). */
+export interface UploadResult {
+  /** Скільки джерел створено. */
+  sources: number;
+  /** Скільки чанків проіндексовано (для документів). */
+  chunks: number;
+  /** Створені джерела (для миттєвого показу в UI). */
+  created: KnowledgeSource[];
 }
 
 // ──────────────────────────────── Фабрика тестів ─────────────────────────────
@@ -511,3 +558,16 @@ export interface CreateIdeaRequest {
   projectId?: number | null;
   source?: IdeaSource;
 }
+
+// ──────────────────────────────── Налаштування акаунту ─────────────────────────
+
+export type AiModel = "claude-sonnet-4-6" | "gemini-3-1-flash-lite";
+
+export interface SettingsResponse {
+  activeModel: AiModel;
+}
+
+export interface UpdateSettingsRequest {
+  activeModel: AiModel;
+}
+

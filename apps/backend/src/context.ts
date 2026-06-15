@@ -14,12 +14,20 @@ export async function augmentSystemPrompt(opts: {
   projectId?: number | null;
   /** Текст запиту/завдання — за ним шукаємо релевантні знання. */
   query?: string;
+  /**
+   * Slug агента, для якого формується контекст. Якщо задано — у промпт
+   * потрапляють лише ті матеріали бази знань, що видимі цьому агенту
+   * (visible_to_agents порожній або містить цей slug).
+   */
+  agentSlug?: string | null;
 }): Promise<string> {
   if (!opts.projectId) return opts.systemPrompt;
 
   const [profileBlock, knowledgeBlock] = await Promise.all([
     getProfileBlock(opts.projectId),
-    opts.query ? getKnowledgeBlock(opts.projectId, opts.query) : Promise.resolve(""),
+    opts.query
+      ? getKnowledgeBlock(opts.projectId, opts.query, 4, opts.agentSlug)
+      : Promise.resolve(""),
   ]);
 
   const parts = [opts.systemPrompt, profileBlock, knowledgeBlock].filter(Boolean);
