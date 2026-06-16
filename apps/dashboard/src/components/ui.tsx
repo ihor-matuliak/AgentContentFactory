@@ -91,6 +91,7 @@ const TASK_STATUS_META: Record<TaskStatus, { label: string; color: string }> = {
   pending: { label: "У черзі", color: "var(--color-fg-subtle)" },
   in_progress: { label: "Працює", color: "var(--color-busy)" },
   waiting_question: { label: "Чекає відповіді", color: "var(--color-honey)" },
+  awaiting_approval: { label: "Чекає схвалення візуалу", color: "var(--color-honey)" },
   done: { label: "Готово", color: "var(--color-info)" },
   approved: { label: "Схвалено", color: "var(--color-online)" },
   failed: { label: "Помилка", color: "var(--color-danger)" },

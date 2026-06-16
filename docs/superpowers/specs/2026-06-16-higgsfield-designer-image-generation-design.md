@@ -56,18 +56,22 @@ generateImages(opts: {
   refImagePaths?: string[];   // локальні шляхи референсів зі «Знань»
   count?: number;             // типово 1
   aspectRatio?: string;       // типово "4:5"
-  model?: string;             // типово gpt_image_2; nano_banana_2 коли є референси
+  model?: string;             // типово text2image_soul_v2 (Soul 2.0)
   runId: number;
   timeoutMs?: number;
 }): Promise<{ images: { path: string; url: string; bytes: number; mimeType: string }[]; costUsd: number | null }>
 ```
 
 **Поведінка:**
-- Будує команду: `higgsfield generate create <model> --prompt "…" [--image <ref> …] --aspect_ratio <ar> --wait --json` (+ `--wait-timeout`). Якщо `count > 1` і модель не підтримує батч — викликаємо послідовно `count` разів.
+- Будує команду: `higgsfield generate create <model> --prompt "…" [--image <ref> …] --aspect_ratio <ar> [--quality 2k] --wait --json` (+ `--wait-timeout`). Якщо `count > 1` і модель не підтримує батч — викликаємо послідовно `count` разів.
 - Парсить `--json` (масив фінальних job-обʼєктів), дістає result-URL-и.
 - Завантажує файли в `uploads/generated/<runId>/<uuid>.<ext>`; повертає relative-path + публічний `/uploads/...` URL (повторно використовуємо статику `/uploads`, додану в Базі знань).
 - Витрати: якщо CLI віддає cost — повертаємо; інакше `null`.
-- Вибір моделі: `gpt_image_2` за замовчуванням; `nano_banana_2` коли передані референси.
+- **Вибір моделі (за замовчуванням — Higgsfield Soul):**
+  - Дефолт — `text2image_soul_v2` (**Soul 2.0**), естетичні lifestyle/editorial візуали; передаємо `--quality 2k` (тир `1.5k`/`2k` мапиться на роздільність).
+  - Якщо є **референси-зображення** (`refImagePaths`), а Soul не приймає `--image` для image-to-image — використовуємо `nano_banana_2` (reference-driven), щоб не втратити вплив референсів. (Для консистентності облич можливе майбутнє підключення `--soul-id` через `higgsfield-soul-id`.)
+  - Усе перекривається через `HIGGSFIELD_IMAGE_MODEL`.
+  - **Примітка/компроміс:** Soul сильний в естетиці, але для обкладинок із важким текстом/типографікою на зображенні `gpt_image_2` дає чіткіший on-image text — за потреби перемикається env-змінною.
 - Помилки: «session expired» / «not authenticated» → кидаємо зрозумілу помилку (як auth-помилка Claude). Таймаут — як `AGENT_TIMEOUT_MS`, окремий `HIGGSFIELD_TIMEOUT_MS`.
 
 **Авторизація / передумови:** CLI встановлюється на хост (`install.sh`), `higgsfield auth login` один раз. Старт-чек у `index.ts` (необовʼязковий, тихий warning) аналогічно перевірці креденшалів Claude. Env: `HIGGSFIELD_BIN` (шлях до CLI), `HIGGSFIELD_IMAGE_MODEL` (override моделі), `HIGGSFIELD_TIMEOUT_MS`.

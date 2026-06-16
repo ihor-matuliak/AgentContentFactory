@@ -51,3 +51,6 @@ design_example/
 
 # Завантажені файли бази знань
 uploads/
+
+# Visual brainstorming companion
+.superpowers/

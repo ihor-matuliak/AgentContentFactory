@@ -7,6 +7,7 @@ import type {
   RunTask,
 } from "@swarm/shared";
 import { query } from "./db.js";
+import { listAssetsByTask } from "./store.js";
 
 // ───────────────────────────── Майданчик за текстом ──────────────────────────
 
@@ -31,6 +32,7 @@ interface DraftRow {
   platform: string;
   title: string;
   body: string;
+  image_urls: string[] | null;
   status: string;
   created_at: Date;
   updated_at: Date;
@@ -46,6 +48,7 @@ function mapDraft(row: DraftRow): ContentDraft {
     platform: row.platform as Platform,
     title: row.title,
     body: row.body,
+    imageUrls: row.image_urls ?? [],
     status: row.status as DraftStatus,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
@@ -60,10 +63,11 @@ export async function createDraft(input: {
   platform: Platform;
   title: string;
   body: string;
+  imageUrls?: string[];
 }): Promise<ContentDraft> {
   const { rows } = await query<DraftRow>(
-    `INSERT INTO content_drafts (project_id, run_id, task_id, agent_slug, platform, title, body)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    `INSERT INTO content_drafts (project_id, run_id, task_id, agent_slug, platform, title, body, image_urls)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
     [
       input.projectId,
       input.runId,
@@ -72,6 +76,7 @@ export async function createDraft(input: {
       input.platform,
       input.title,
       input.body,
+      input.imageUrls && input.imageUrls.length > 0 ? input.imageUrls : null,
     ],
   );
   return mapDraft(rows[0]);
@@ -229,16 +234,31 @@ export async function draftFromApprovedTask(
   task: RunTask,
   projectId: number,
 ): Promise<ContentDraft | null> {
+  // Ідемпотентність: одна чернетка на завдання (гейт-схвалення + фінальний огляд
+  // можуть обидва викликати цю функцію для того самого завдання).
+  const existing = await query<{ id: number }>(
+    "SELECT id FROM content_drafts WHERE task_id = $1 LIMIT 1",
+    [task.id],
+  );
+  if (existing.rows.length > 0) return null;
+
+  // Схвалені зображення Higgsfield (для завдань Дизайнера на гейті).
+  const imageUrls = (await listAssetsByTask(task.id))
+    .filter((a) => a.status === "approved")
+    .map((a) => a.url);
+
   const platform = detectPlatform(`${task.description} ${task.result}`);
   // Публікаційним вважаємо завдання Публікатора, будь-яке з упізнаваним
-  // майданчиком (Telegram/YouTube/Instagram) або з ознаками контент-допису.
+  // майданчиком (Telegram/YouTube/Instagram), з ознаками контент-допису, або
+  // таке, що має схвалений візуал.
   const isPublication =
     task.agentSlug === "publisher" ||
     platform !== "other" ||
+    imageUrls.length > 0 ||
     /(публ|постинг|post|опублік|випуск|реліз|допис|анонс|caption|підпис|сценар|reels|рілс|shorts)/i.test(
       task.description,
     );
-  if (!isPublication || !task.result.trim()) return null;
+  if (!isPublication || (!task.result.trim() && imageUrls.length === 0)) return null;
   const title = task.description.slice(0, 120);
   const draft = await createDraft({
     projectId,
@@ -248,6 +268,7 @@ export async function draftFromApprovedTask(
     platform,
     title,
     body: task.result,
+    imageUrls,
   });
   await createPlanItem({
     projectId,

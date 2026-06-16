@@ -139,18 +139,29 @@ export const api = {
 
   // ── Прогони рою ──
 
-  createRun(projectId: number, goal: string, size?: RunSize, maxBudgetUsd?: number): Promise<Run> {
+  createRun(
+    projectId: number,
+    goal: string,
+    size?: RunSize,
+    maxBudgetUsd?: number,
+    imageModel?: string,
+  ): Promise<Run> {
     return request<Run>("/api/runs", {
       method: "POST",
-      body: JSON.stringify({ projectId, goal, size, maxBudgetUsd }),
+      body: JSON.stringify({ projectId, goal, size, maxBudgetUsd, imageModel }),
     });
   },
 
   /** Пряме (solo) завдання конкретному агенту, оминаючи планування. */
-  soloTask(projectId: number, agentSlug: string, goal: string): Promise<Run> {
+  soloTask(
+    projectId: number,
+    agentSlug: string,
+    goal: string,
+    imageModel?: string,
+  ): Promise<Run> {
     return request<Run>("/api/runs/solo", {
       method: "POST",
-      body: JSON.stringify({ projectId, agentSlug, goal }),
+      body: JSON.stringify({ projectId, agentSlug, goal, imageModel }),
     });
   },
 
@@ -186,6 +197,20 @@ export const api = {
     return request<RunDetail>(`/api/runs/${runId}/tasks/${taskId}/answer`, {
       method: "POST",
       body: JSON.stringify({ answer }),
+    });
+  },
+
+  /** Рішення власника на гейті схвалення згенерованого візуалу (посеред прогону). */
+  visualDecision(
+    runId: number,
+    taskId: number,
+    projectId: number,
+    decision: "approve" | "rework",
+    comment?: string,
+  ): Promise<RunDetail> {
+    return request<RunDetail>(`/api/runs/${runId}/tasks/${taskId}/visual`, {
+      method: "POST",
+      body: JSON.stringify({ projectId, decision, comment }),
     });
   },
 

@@ -286,12 +286,34 @@ function TaskCard({
   executors: AgentSummary[];
   onMutate: (detail: RunDetail) => void;
 }) {
+  const project = useProject();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(task.description);
   const [answer, setAnswer] = useState("");
+  const [reworkComment, setReworkComment] = useState("");
   const [busy, setBusy] = useState(false);
   const name = task.agentName ?? task.agentSlug;
+  // Зображення набору (ховаємо відхилені попередні спроби).
+  const visualAssets = (task.generatedAssets ?? []).filter((a) => a.status !== "rejected");
+
+  async function visualDecide(decision: "approve" | "rework") {
+    setBusy(true);
+    try {
+      onMutate(
+        await api.visualDecision(
+          runId,
+          task.id,
+          project.id,
+          decision,
+          decision === "rework" ? reworkComment.trim() : undefined,
+        ),
+      );
+      setReworkComment("");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function saveEdit() {
     setBusy(true);
@@ -439,6 +461,64 @@ function TaskCard({
           {task.ownerFeedback && (
             <div className="mt-2 rounded-lg border border-[var(--color-info)]/25 bg-[var(--color-info)]/[0.07] px-3 py-2 text-[12.5px] text-[var(--color-fg-muted)]">
               <span className="font-medium text-[var(--color-info)]">Твій коментар:</span> {task.ownerFeedback}
+            </div>
+          )}
+
+          {/* Згенерований візуал: стрічка зображень. */}
+          {visualAssets.length > 0 && (
+            <div className="mt-3">
+              <div className="flex gap-2.5 overflow-x-auto pb-1">
+                {visualAssets.map((a) => (
+                  <a
+                    key={a.id}
+                    href={`${api.backendUrl}${a.url}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block shrink-0"
+                    title="Відкрити в новій вкладці"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`${api.backendUrl}${a.url}`}
+                      alt={`Згенероване зображення ${a.ordinal + 1}`}
+                      loading="lazy"
+                      className="h-36 w-auto rounded-lg border border-[var(--color-border)] object-cover"
+                    />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Гейт схвалення візуалу (пауза посеред прогону). */}
+          {task.status === "awaiting_approval" && (
+            <div className="mt-3 rounded-lg border border-[var(--color-honey)]/30 bg-[var(--color-honey)]/[0.07] p-3">
+              <p className="text-[12.5px] font-medium text-[var(--color-honey)]">
+                Візуал на твоє схвалення — рій на паузі.
+              </p>
+              <textarea
+                value={reworkComment}
+                onChange={(e) => setReworkComment(e.target.value)}
+                rows={2}
+                placeholder="Коментар для доопрацювання (напр. «обкладинку темнішою, додай людину в кадрі»)"
+                className="mt-2.5 w-full resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-base)] px-3 py-2 text-[13px] text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:border-[var(--color-honey)]/50 focus:outline-none"
+              />
+              <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => visualDecide("approve")}
+                  disabled={busy}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-online)] px-3.5 py-2 text-[13px] font-semibold text-[var(--color-ink)] transition-opacity hover:opacity-90 disabled:opacity-60"
+                >
+                  ✓ Схвалити — рій рухається далі
+                </button>
+                <button
+                  onClick={() => visualDecide("rework")}
+                  disabled={busy}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border-strong)] px-3.5 py-2 text-[13px] font-medium text-[var(--color-honey)] transition-colors hover:bg-[var(--color-honey)]/10 disabled:opacity-60"
+                >
+                  <RotateIcon width={14} height={14} /> На доопрацювання
+                </button>
+              </div>
             </div>
           )}
 

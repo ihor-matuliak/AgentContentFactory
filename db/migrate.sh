@@ -30,4 +30,10 @@ if [ -f "$SCRIPT_DIR/migrate_knowledge_v2.sql" ]; then
     -U "$DB_ROLE" -d "$DB_NAME" -v ON_ERROR_STOP=1 -f "$SCRIPT_DIR/migrate_knowledge_v2.sql"
 fi
 
+if [ -f "$SCRIPT_DIR/migrate_higgsfield.sql" ]; then
+  echo "==> Застосування міграції Higgsfield (generated_assets)…"
+  PGPASSWORD="$DB_PASSWORD" psql -h "$HOST" -p "$PORT" \
+    -U "$DB_ROLE" -d "$DB_NAME" -v ON_ERROR_STOP=1 -f "$SCRIPT_DIR/migrate_higgsfield.sql"
+fi
+
 echo "✅ Міграцію застосовано (дані збережено)."

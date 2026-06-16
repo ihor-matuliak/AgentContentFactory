@@ -112,6 +112,22 @@ export async function runAgent(opts: {
             }
           });
         }
+        if (allowed.includes("mcp__swarm__generate_image")) {
+          declarations.push({
+            name: "mcp__swarm__generate_image",
+            description: "Згенерувати зображення (обкладинку/слайди каруселі) через Higgsfield за твоїм промптом. Повертає URL-и; після цього здай набір через submit_deliverable.",
+            parameters: {
+              type: "object",
+              properties: {
+                prompt: { type: "string", description: "Детальний візуальний промпт" },
+                count: { type: "number", description: "Скільки зображень згенерувати (карусель). Типово 1" },
+                aspect_ratio: { type: "string", description: "Співвідношення сторін: 3:4, 1:1, 9:16, 16:9, 4:3" },
+                use_references: { type: "boolean", description: "Чи використовувати референси зі «Знань». Типово true" }
+              },
+              required: ["prompt"]
+            }
+          });
+        }
         if (declarations.length > 0) {
           toolsList.push({ functionDeclarations: declarations });
         }

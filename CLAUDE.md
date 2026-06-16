@@ -32,12 +32,13 @@
   - `src/agents/conversational.ts` — рушій чату; `src/agents/handlers.ts` — реєстр `slug → обробник`
   - `src/agents/orchestrator.ts` — рушій прогону: планування → виконання (таймаут, уточнювальні питання) → Критик (до 2 кіл) → зведення
   - `src/agents/queue.ts` — фонова черга (послідовно; не фіналізує прогін, поки є завдання `waiting_question`/`in_progress`)
-  - `src/agents/runner.ts` — виклик агента (текст + витрати + таймаут `AGENT_TIMEOUT_MS`); `src/agents/tools.ts` — «руки» агента (MCP, zod): `record_progress`, `submit_deliverable`, `ask_owner`
+  - `src/agents/runner.ts` — виклик агента (текст + витрати + таймаут `AGENT_TIMEOUT_MS`); `src/agents/tools.ts` — «руки» агента (MCP, zod): `record_progress`, `submit_deliverable`, `ask_owner` + `generate_image` (лише Дизайнеру — генерація зображень через Higgsfield)
+  - `src/higgsfield.ts` — інтеграція Higgsfield: обгортка над CLI (`generate create … --wait --json`), завантаження результатів у `uploads/generated/`, вибір моделі (Soul за замовчуванням; nano_banana при референсах)
   - `src/store.ts` — `runs`/`tasks` (правки, дошка, уточнення); `src/journal.ts` — `activity_log` + `events`
   - `src/notify.ts` — Telegram-сповіщення; `src/scripts/telegram-chat-id.ts`
   - `src/env.ts`, `src/db.ts`
 - `packages/shared` — спільні TS-типи
-- `db/` — `schema.sql`, `seed.sql`, `migrate.sql` (безпечна ідемпотентна міграція Фаз 3–4), `migrate_gemini.sql` (таблиця налаштувань ШІ) та `migrate_knowledge_v2.sql` (Базі знань: `source_type` + `visible_to_agents` у `knowledge_sources`) + скрипти `setup.sh` / `seed.sh` / `migrate.sh` (застосовує всі три міграції по черзі) / `reset.sh` / `backup.sh`
+- `db/` — `schema.sql`, `seed.sql`, `migrate.sql` (безпечна ідемпотентна міграція Фаз 3–4), `migrate_gemini.sql` (таблиця налаштувань ШІ), `migrate_knowledge_v2.sql` (Базі знань: `source_type` + `visible_to_agents` у `knowledge_sources`) та `migrate_higgsfield.sql` (таблиця `generated_assets` + `content_drafts.image_urls`) + скрипти `setup.sh` / `seed.sh` / `migrate.sh` (застосовує всі міграції по черзі) / `reset.sh` / `backup.sh`
 
 ## Агенти та їхні «характери»
 **Характери (особистості) агентів живуть у `db/seed.sql`, а не в коді.** Системний промпт із бази визначає тон і поведінку агента; обробник у `handlers.ts` лише обирає рушій (зараз — спільний `conversational.ts`). Щоб переписати будь-який характер: відредагуй промпт у `db/seed.sql` і виконай `npm run db:seed` — це **UPSERT за `slug`**, він оновлює дані агентів і **не стирає історію чатів**.
@@ -75,6 +76,14 @@
 - **Інбокс ідей (Частина 6):** `idea_inbox` (`project_id` nullable, `source` dashboard|telegram). `src/ideas.ts` + `/api/ideas`; сторінка `/ideas` (верхній рівень): додати/архівувати, «У прогін» (`POST /api/ideas/:id/convert` → створює прогін у проєкті ідеї/обраному). Ідеї також надходять через Telegram `/idea …`.
 - **Нові роути бекенду:** `/api/projects`, `/api/knowledge`, `/api/ideas`, `/api/tests`, `/api/content-plan/:id/publish/telegram`. Усі контентні/прогінні/чат-роути тепер вимагають `projectId`.
 
+## Генерація зображень Дизайнером (Higgsfield + гейт схвалення)
+- **Інтеграція:** `src/higgsfield.ts` викликає `higgsfield` CLI поверх ЗБЕРЕЖЕНОЇ СЕСІЇ (не API-ключ) — як логін Claude. Передумови (ручні, одноразові): встановити CLI (`install.sh`) + `higgsfield auth login`. Env: `HIGGSFIELD_BIN`, `HIGGSFIELD_IMAGE_MODEL` (типово `text2image_soul_v2` — Soul 2.0), `HIGGSFIELD_TIMEOUT_MS`. Без сесії завдання падає у `failed` зі зрозумілою помилкою. Працює headless у фоновій черзі.
+- **Вибір моделі перед запуском (per-run):** курований перелік `IMAGE_MODELS` у `@swarm/shared` (Soul 2.0 — дефолт, GPT Image 2, Nano Banana 2, Z Image). Обирається у формі створення прогону на `/runs` і в чаті Дизайнера (біля кнопок «Поставити завдання»/«Делегувати»); зберігається у `runs.image_model` (NULL → серверний дефолт `HIGGSFIELD_IMAGE_MODEL`). Бекенд валідує через `isValidImageModel`. Явно обрана модель поважається без авто-перемикання; для дефолтної Soul за наявності референсів — авто-перемикання на `nano_banana_2`. Soul не приймає `--image`, тож референси для Soul пропускаються; дозволені aspect-ratio Soul — `3:4` (дефолт), `1:1`, `9:16`, `16:9`, `4:3` (НЕ `4:5`).
+- **Інструмент `generate_image`** (у `tools.ts`, лише агенту `designer`): агент пише промпт → CLI генерує 1…N зображень (кількість із завдання), автоматично підтягуючи референси зі «Знань» (`cover_photo`/`style_reference`, видимі Дизайнеру; `listAgentImageRefPaths`); модель — з `run.image_model`. Файли → `uploads/generated/<runId>/` (статика `/uploads`), рядки `generated_assets`, вартість → телеметрія. Інструмент також задекларовано в Gemini-гілці `runner.ts`.
+- **Гейт схвалення ПОСЕРЕД прогону:** якщо завдання згенерувало зображення, `executeTask` ставить його у статус `awaiting_approval` (пропускаючи авто-Критика — суддя візуалу людина) + подія `visual_approval` + Telegram. `runHasBlockingTask` рахує `awaiting_approval` блокуючим → черга паузить прогін, downstream-завдання чекають. Власник на `/runs/[id]`: `POST …/tasks/:taskId/visual` `{decision:'approve'|'rework', comment?}` — **approve** → `generated_assets='approved'`, завдання `approved`, замикання петлі (чернетка + контент-план з `image_urls`, ідемпотентно), `kickQueue()` → рій далі; **rework** → assets `rejected`, `bumpRevision` (→ `pending`, коментар у контекст) → Дизайнер перегенеровує → гейт знову.
+- **Дані:** `generated_assets` (привʼязані до `task_id`/`run_id`, status `generated|approved|rejected`), `content_drafts.image_urls TEXT[]`. UI: картка-гейт зі стрічкою зображень + кнопки на сторінці прогону; бейдж статусу «Чекає схвалення візуалу».
+- **Специфікація/план:** `docs/superpowers/specs/2026-06-16-…-design.md`, `docs/superpowers/plans/2026-06-16-…-plan.md`.
+
 ## Команди (root `package.json`)
 - `npm run dev` — бекенд + дашборд разом (`concurrently`)
 - `npm run dev:backend` — лише бекенд (плаский `tsx`, **без** watch)
@@ -98,6 +107,8 @@
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OWNER_CHAT_ID` — Telegram: сповіщення + двосторонній режим (long-polling) у Фазі 5, якщо задано обидва. chat_id каналу для публікацій — у профілі проєкту, не в `.env`.
 - `SWARM_PASSWORD` — пароль на дашборд (порожній → без авторизації).
 - `AGENT_TIMEOUT_MS` — таймаут одного виклику агента (типово 180000).
+- `IMAGE_AGENT_TIMEOUT_MS` — окремий таймаут для image-capable агента (Дизайнер) — покриває послідовні CLI-виклики Higgsfield для каруселі (типово 1800000, тобто 30 хв).
+- `HIGGSFIELD_BIN` / `HIGGSFIELD_IMAGE_MODEL` / `HIGGSFIELD_TIMEOUT_MS` — генерація зображень Дизайнером. Авторизація — через `higgsfield auth login` (збережена сесія, не ключ). Типова модель — `text2image_soul_v2` (Soul 2.0).
 
 ## Важливі правила розробки
 - **Конфігурація та безпека:** усі чутливі дані, токени та ключі зберігаються **виключно у файлі `.env`** у корені проєкту. Файл у `.gitignore` і ніколи не потрапляє до репозиторію. Шаблон — `.env.example`.

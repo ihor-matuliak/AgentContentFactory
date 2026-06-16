@@ -7,7 +7,9 @@ import type {
   RunSize,
   SoloTaskRequest,
   UpdateTaskRequest,
+  VisualDecisionRequest,
 } from "@swarm/shared";
+import { isValidImageModel } from "@swarm/shared";
 import { query } from "../db.js";
 import { addEvent, logActivity } from "../journal.js";
 import { notifyOwner } from "../notify.js";
@@ -23,6 +25,7 @@ import {
   listReviewQueue,
   listRuns,
   setRunStatus,
+  setTaskAssetsStatus,
   setTaskStatus,
   updateTask,
 } from "../store.js";
@@ -52,8 +55,12 @@ runsRouter.post("/", async (req, res) => {
     typeof body.maxBudgetUsd === "number" && body.maxBudgetUsd > 0
       ? body.maxBudgetUsd
       : null;
+  const imageModel =
+    typeof body.imageModel === "string" && isValidImageModel(body.imageModel)
+      ? body.imageModel
+      : null;
 
-  const run = await createRun(projectId, goal, size, "planning", maxBudgetUsd);
+  const run = await createRun(projectId, goal, size, "planning", maxBudgetUsd, imageModel);
   await logActivity(run.id, "owner", "created run", goal);
   await addEvent("run_created", "Створено новий прогін рою", goal, run.id, projectId);
   kickQueue();
@@ -88,9 +95,13 @@ runsRouter.post("/solo", async (req, res) => {
     typeof body.maxBudgetUsd === "number" && body.maxBudgetUsd > 0
       ? body.maxBudgetUsd
       : null;
+  const imageModel =
+    typeof body.imageModel === "string" && isValidImageModel(body.imageModel)
+      ? body.imageModel
+      : null;
 
   // Прогін одразу у виконанні (без планування) + одне завдання для агента.
-  const run = await createRun(projectId, goal, "small", "running", maxBudgetUsd);
+  const run = await createRun(projectId, goal, "small", "running", maxBudgetUsd, imageModel);
   await addTaskToRun({ runId: run.id, agentSlug, description: goal });
   await logActivity(run.id, "owner", "solo task", `${agent.name}: ${goal}`);
   await addEvent("run_started", `Пряме завдання: ${agent.name}`, goal, run.id, projectId);
@@ -207,6 +218,66 @@ runsRouter.post("/:id/tasks/:taskId/review", async (req, res) => {
   res.json(await getRunDetail(runId));
 });
 
+/**
+ * POST /api/runs/:id/tasks/:taskId/visual — рішення власника на гейті схвалення
+ * згенерованого візуалу ПОСЕРЕД прогону: «approve» (рій рухається далі) або
+ * «rework» (Дизайнер перегенеровує з коментарем).
+ */
+runsRouter.post("/:id/tasks/:taskId/visual", async (req, res) => {
+  const runId = Number(req.params.id);
+  const taskId = Number(req.params.taskId);
+  const body = req.body as Partial<VisualDecisionRequest>;
+
+  const run = await getRun(runId);
+  const task = await getTask(taskId);
+  if (!run || !task || task.runId !== runId) {
+    res.status(404).json({ error: "Прогін або завдання не знайдено" });
+    return;
+  }
+  if (task.status !== "awaiting_approval") {
+    res.status(409).json({ error: "Завдання не на гейті схвалення візуалу" });
+    return;
+  }
+
+  if (body.decision === "rework") {
+    const comment = (body.comment ?? "").toString().trim();
+    await setTaskAssetsStatus(taskId, "rejected");
+    await bumpRevision(taskId, comment); // → pending, revision_round++, ownerFeedback
+    await logActivity(runId, "owner", "reworked visual", comment);
+    await addEvent(
+      "revision_requested",
+      "Візуал відправлено на доопрацювання",
+      comment || run.goal,
+      runId,
+      run.projectId,
+    );
+    kickQueue(); // Дизайнер перегенерує → гейт знову
+    res.json(await getRunDetail(runId));
+    return;
+  }
+
+  // approve → зображення схвалено, рій рухається далі
+  await setTaskAssetsStatus(taskId, "approved");
+  await setTaskStatus(taskId, "approved");
+  await logActivity(runId, "owner", "approved visual", task.description);
+
+  // Замкнута петля: схвалений візуал → чернетка + контент-план (ідемпотентно).
+  const draft = await draftFromApprovedTask({ ...task, status: "approved" }, run.projectId);
+  if (draft) {
+    await logActivity(runId, "system", "created draft", draft.title);
+    await addEvent(
+      "draft_created",
+      "Створено чернетку контенту",
+      `${draft.title} → контент-план`,
+      runId,
+      run.projectId,
+    );
+  }
+
+  kickQueue(); // продовжуємо прогін (downstream-завдання, фіналізація)
+  res.json(await getRunDetail(runId));
+});
+
 /** POST /api/runs/:id/repeat — повторити прогін (нова ціль = та сама). */
 runsRouter.post("/:id/repeat", async (req, res) => {
   const src = await getRun(Number(req.params.id));
@@ -214,7 +285,7 @@ runsRouter.post("/:id/repeat", async (req, res) => {
     res.status(404).json({ error: "Прогін не знайдено" });
     return;
   }
-  const run = await createRun(src.projectId, src.goal, src.size, "planning", src.maxBudgetUsd);
+  const run = await createRun(src.projectId, src.goal, src.size, "planning", src.maxBudgetUsd, src.imageModel);
   await logActivity(run.id, "owner", "repeated run", `копія прогону #${src.id}`);
   await addEvent("run_created", "Прогін повторено", src.goal, run.id, src.projectId);
   kickQueue();

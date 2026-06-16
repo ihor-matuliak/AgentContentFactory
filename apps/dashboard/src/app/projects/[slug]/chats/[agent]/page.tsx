@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import type { AgentSummary, ChatMessage } from "@swarm/shared";
+import { IMAGE_MODELS, type AgentSummary, type ChatMessage } from "@swarm/shared";
 import { api } from "@/lib/api";
 import { useProject } from "@/components/ProjectContext";
 import { Markdown } from "@/components/Markdown";
@@ -26,6 +26,7 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [acting, setActing] = useState(false);
+  const [imageModel, setImageModel] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -124,7 +125,7 @@ export default function ChatPage() {
     setActing(true);
     setError(null);
     try {
-      const run = await api.soloTask(project.id, slug, goal);
+      const run = await api.soloTask(project.id, slug, goal, imageModel || undefined);
       router.push(`${base}/runs/${run.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не вдалося поставити завдання");
@@ -142,7 +143,7 @@ export default function ChatPage() {
     setActing(true);
     setError(null);
     try {
-      const run = await api.createRun(project.id, goal);
+      const run = await api.createRun(project.id, goal, undefined, undefined, imageModel || undefined);
       router.push(`${base}/runs/${run.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не вдалося делегувати");
@@ -232,6 +233,23 @@ export default function ChatPage() {
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <span className="text-[11px] text-[var(--color-fg-subtle)]">Enter — надіслати · Shift+Enter — новий рядок</span>
             <div className="ml-auto flex flex-wrap items-center gap-2">
+              {slug === "designer" && (
+                <label className="flex items-center gap-1.5 text-[12px] text-[var(--color-fg-muted)]" title="Модель Higgsfield для генерації зображень">
+                  <span>Модель:</span>
+                  <select
+                    value={imageModel}
+                    onChange={(e) => setImageModel(e.target.value)}
+                    className="rounded-lg border border-[var(--color-border)] bg-[var(--color-base)] px-2 py-1.5 text-[12px] text-[var(--color-fg)] focus:border-[var(--color-honey)]/50 focus:outline-none"
+                  >
+                    <option value="">За замовчуванням (Soul)</option>
+                    {IMAGE_MODELS.map((m) => (
+                      <option key={m.id} value={m.id} title={m.hint}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <button
                 type="button"
                 onClick={soloTask}

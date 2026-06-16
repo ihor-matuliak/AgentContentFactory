@@ -327,6 +327,28 @@ export async function listSources(
   return rows.map(mapSource);
 }
 
+/**
+ * Абсолютні локальні шляхи до зображень-референсів (cover_photo / style_reference),
+ * видимих агенту, — для передачі в Higgsfield як `--image`. Найновіші — перші.
+ */
+export async function listAgentImageRefPaths(
+  projectId: number,
+  agentSlug: string,
+  limit = 3,
+): Promise<string[]> {
+  const { rows } = await query<{ path: string }>(
+    `SELECT path FROM knowledge_sources
+     WHERE project_id = $1
+       AND source_type IN ('cover_photo', 'style_reference')
+       AND path <> ''
+       AND (visible_to_agents IS NULL OR $2 = ANY(visible_to_agents))
+     ORDER BY id DESC
+     LIMIT $3`,
+    [projectId, agentSlug, limit],
+  );
+  return rows.map((r) => join(UPLOADS_DIR, r.path));
+}
+
 /** Кількість джерел у кожній категорії — для лічильників на вкладках. */
 export async function countByType(projectId: number): Promise<KnowledgeCounts> {
   const { rows } = await query<{ source_type: string; n: string }>(

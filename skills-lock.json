@@ -11,6 +11,12 @@
       "skillPath": ".claude/skills/frontend-design/SKILL.md",
       "computedHash": "35c43b9d10c2388dbb228047ad028c989a14033750812125f351c85aa42c7a4a"
     },
+    "higgsfield-generate": {
+      "source": "higgsfield-ai/skills",
+      "sourceType": "github",
+      "skillPath": "higgsfield-generate/SKILL.md",
+      "computedHash": "d8e3f14fbb59760f3f05ad6b85a3bb8152cdb28553822d0d539a7090d9412518"
+    },
     "skill-creator": {
       "sourceType": "local",
       "skillPath": ".claude/skills/skill-creator/SKILL.md",

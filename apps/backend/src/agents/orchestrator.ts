@@ -1,5 +1,6 @@
 import type { Agent, CriticVerdict, RunTask } from "@swarm/shared";
 import { query } from "../db.js";
+import { env } from "../env.js";
 import { addEvent, logActivity } from "../journal.js";
 import { notifyOwner } from "../notify.js";
 import {
@@ -8,6 +9,7 @@ import {
   createTask,
   getRun,
   getTask,
+  listAssetsByTask,
   listTasks,
   setRunStatus,
   setRunSummary,
@@ -17,7 +19,7 @@ import {
   setTaskStatus,
 } from "../store.js";
 import { runAgent, type Usage } from "./runner.js";
-import { buildTaskTools } from "./tools.js";
+import { buildTaskTools, IMAGE_CAPABLE_AGENTS } from "./tools.js";
 
 /** Максимум кіл автодоопрацювання Критиком. */
 const MAX_REVISION_ROUNDS = 2;
@@ -307,13 +309,33 @@ export async function executeTask(taskId: number): Promise<void> {
     runId: task.runId,
     taskId,
     agentSlug: task.agentSlug,
+    projectId: run.projectId,
+    imageModel: run.imageModel,
   });
+
+  // Дизайнеру нагадуємо про реальну генерацію зображень через Higgsfield.
+  // Явно вимагаємо ОДИН виклик generate_image з count=N — інакше агент дробить
+  // карусель на N окремих викликів і впирається в maxTurns.
+  const visualBlock =
+    task.agentSlug === "designer"
+      ? "\n\nЯкщо завдання потребує візуалу (обкладинка, прев'ю, слайди каруселі) — напиши сильний візуальний промпт і виклич generate_image РІВНО ОДИН РАЗ, передавши count = потрібна кількість зображень (а не робити окремий виклик на кожне зображення). За потреби спирайся на референси зі «Знань». Не зловживай record_progress: достатньо одного запису до генерації й одного після. Тоді здай весь набір через submit_deliverable з коротким описом."
+      : "";
 
   const prompt = `Загальна ціль прогону: «${run.goal}»
 
-Твоє завдання: ${task.description}${depsBlock}${revisionBlock}${answerBlock}
+Твоє завдання: ${task.description}${depsBlock}${revisionBlock}${answerBlock}${visualBlock}
 
 Зроби роботу й здай готовий результат через інструмент submit_deliverable (повний матеріал у Markdown). За потреби фіксуй кроки через record_progress. Якщо без уточнення від власника якісно виконати неможливо — постав ОДНЕ питання через ask_owner (лише за реальної потреби).`;
+
+  // Дизайнер послідовно дзвонить higgsfield CLI для каруселі — кожен виклик
+  // може йти хвилину+; дефолтні 3 хв на агента легко переростають у таймаут.
+  // Окремий вищий ліміт + більше turns (record_progress → generate_image →
+  // submit_deliverable, з можливим повтором при rework).
+  const isImageCapable = IMAGE_CAPABLE_AGENTS.has(task.agentSlug);
+  const taskTimeoutMs = isImageCapable ? env.imageAgentTimeoutMs : env.agentTimeoutMs;
+  // Запас на випадок, коли агент усе ж дробить роботу (зайві record_progress,
+  // окремі виклики generate_image, повтор на rework з коментарем власника).
+  const taskMaxTurns = isImageCapable ? 30 : 6;
 
   let result: string;
   try {
@@ -322,6 +344,8 @@ export async function executeTask(taskId: number): Promise<void> {
       prompt,
       mcpServers: tools.mcpServers,
       allowedTools: tools.allowedTools,
+      timeoutMs: taskTimeoutMs,
+      maxTurns: taskMaxTurns,
       projectId: run.projectId,
       contextQuery: task.description,
       agentSlug: task.agentSlug,
@@ -355,28 +379,67 @@ export async function executeTask(taskId: number): Promise<void> {
     // Рятувальна мережа: якщо агент уже здав deliverable (а впав/спіймав
     // таймаут на зайвій генерації опісля) — не втрачаємо роботу, беремо її.
     const salvaged = tools.getDeliverable();
+    const errMsg = err instanceof Error ? err.message : String(err);
     if (salvaged) {
       result = salvaged;
       await logActivity(
         task.runId,
         task.agentSlug,
         "salvaged deliverable after error",
-        err instanceof Error ? err.message : String(err),
+        errMsg,
+      );
+    } else if (tools.getGeneratedCount() > 0) {
+      // Дизайнер згенерував зображення, але впав до submit_deliverable
+      // (max_turns / таймаут на зайвих record_progress). Візуал — головний
+      // deliverable; синтезуємо його з самих ассетів і пускаємо завдання
+      // на гейт схвалення, щоб не втратити готову роботу.
+      const assets = await listAssetsByTask(taskId);
+      const lines = assets.map(
+        (a, i) => `${i + 1}. ![Згенероване зображення ${i + 1}](${a.url})`,
+      );
+      result =
+        `# Згенерований візуал\n\n` +
+        `Дизайнер згенерував ${assets.length} зображень для завдання: ${task.description}\n\n` +
+        lines.join("\n") +
+        `\n\n_Опис набору не зданий через ${errMsg} — згенеровані зображення збережено й чекають на схвалення._`;
+      await logActivity(
+        task.runId,
+        task.agentSlug,
+        "salvaged deliverable from assets",
+        `${assets.length} зображень · ${errMsg}`,
       );
     } else {
       await setTaskStatus(taskId, "failed");
-      await logActivity(
-        task.runId,
-        "system",
-        "task failed",
-        err instanceof Error ? err.message : String(err),
-      );
+      await logActivity(task.runId, "system", "task failed", errMsg);
       return;
     }
   }
 
   await setTaskResult(taskId, result);
   await logActivity(task.runId, task.agentSlug, "completed task", "");
+
+  // ── Гейт схвалення візуалу: якщо завдання згенерувало зображення, суддя —
+  // людина. Пропускаємо авто-Критика, ставимо завдання на паузу до рішення. ──
+  if (tools.getGeneratedCount() > 0) {
+    await setTaskStatus(taskId, "awaiting_approval");
+    await logActivity(
+      task.runId,
+      task.agentSlug,
+      "awaiting visual approval",
+      `${tools.getGeneratedCount()} зображень`,
+    );
+    await addEvent(
+      "visual_approval",
+      "Дизайнер чекає на схвалення візуалу",
+      `${run.goal}`,
+      task.runId,
+    );
+    await notifyOwner(
+      "🎨 Візуал на схвалення",
+      `${executor.name} згенерував зображення для: ${run.goal}\nЗайди в прогін, щоб схвалити або відправити на доопрацювання.`,
+    );
+    return;
+  }
 
   // ── Перевірка Критиком ──
   await reviewByCritic(taskId);

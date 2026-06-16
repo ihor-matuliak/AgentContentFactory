@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
-import type { RunSummary } from "@swarm/shared";
+import { IMAGE_MODELS, type RunSummary } from "@swarm/shared";
 import { api } from "@/lib/api";
 import { useProject } from "@/components/ProjectContext";
 import { PageHeader, ProgressBar, RunStatusBadge } from "@/components/ui";
@@ -27,6 +27,7 @@ export default function RunsPage() {
   const [goal, setGoal] = useState("");
   const [bigRun, setBigRun] = useState(false);
   const [budget, setBudget] = useState("");
+  const [imageModel, setImageModel] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -60,6 +61,7 @@ export default function RunsPage() {
         text,
         bigRun ? "large" : undefined,
         budget.trim() && budgetUsd > 0 ? budgetUsd : undefined,
+        imageModel || undefined,
       );
       router.push(`${base}/runs/${run.id}`);
     } catch (err) {
@@ -108,6 +110,21 @@ export default function RunsPage() {
                   placeholder="без ліміту"
                   className="w-28 rounded-lg border border-[var(--color-border)] bg-[var(--color-base)] px-2.5 py-1.5 font-mono text-[12px] text-[var(--color-fg)] placeholder:text-[var(--color-fg-subtle)] focus:border-[var(--color-honey)]/50 focus:outline-none"
                 />
+              </label>
+              <label className="flex items-center gap-2 text-[13px] text-[var(--color-fg-muted)]" title="Модель Higgsfield для генерації зображень Дизайнером">
+                <span>Модель зображень</span>
+                <select
+                  value={imageModel}
+                  onChange={(e) => setImageModel(e.target.value)}
+                  className="rounded-lg border border-[var(--color-border)] bg-[var(--color-base)] px-2.5 py-1.5 text-[12px] text-[var(--color-fg)] focus:border-[var(--color-honey)]/50 focus:outline-none"
+                >
+                  <option value="">За замовчуванням (Soul)</option>
+                  {IMAGE_MODELS.map((m) => (
+                    <option key={m.id} value={m.id} title={m.hint}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
               </label>
             </div>
             <button

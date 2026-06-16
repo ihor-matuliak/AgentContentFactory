@@ -1,6 +1,7 @@
 import type {
   BoardTask,
   CriticVerdict,
+  GeneratedAsset,
   ReviewItem,
   Run,
   RunDetail,
@@ -27,6 +28,7 @@ interface RunRow {
   output_tokens: string;
   cost_usd: string;
   max_budget_usd: string | null;
+  image_model: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -69,6 +71,7 @@ function mapRun(row: RunRow): Run {
     outputTokens: Number(row.output_tokens),
     costUsd: Number(row.cost_usd),
     maxBudgetUsd: row.max_budget_usd === null ? null : Number(row.max_budget_usd),
+    imageModel: row.image_model ?? null,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
   };
@@ -107,11 +110,12 @@ export async function createRun(
   size: RunSize,
   status: RunStatus,
   maxBudgetUsd: number | null,
+  imageModel: string | null = null,
 ): Promise<Run> {
   const { rows } = await query<RunRow>(
-    `INSERT INTO runs (project_id, goal, size, status, max_budget_usd)
-     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-    [projectId, goal, size, status, maxBudgetUsd],
+    `INSERT INTO runs (project_id, goal, size, status, max_budget_usd, image_model)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [projectId, goal, size, status, maxBudgetUsd, imageModel],
   );
   return mapRun(rows[0]);
 }
@@ -291,6 +295,20 @@ export async function getRunDetail(id: number): Promise<RunDetail | null> {
   const run = await getRun(id);
   if (!run) return null;
   const tasks = await listTasks(id);
+  // Прикріплюємо згенеровані зображення до відповідних завдань (для гейту).
+  const assets = await listAssetsByRun(id);
+  if (assets.length > 0) {
+    const byTask = new Map<number, GeneratedAsset[]>();
+    for (const a of assets) {
+      const arr = byTask.get(a.taskId) ?? [];
+      arr.push(a);
+      byTask.set(a.taskId, arr);
+    }
+    for (const t of tasks) {
+      const a = byTask.get(t.id);
+      if (a) t.generatedAssets = a;
+    }
+  }
   const { rows } = await query<{
     id: number;
     run_id: number;
@@ -380,10 +398,107 @@ export async function answerTaskQuestion(id: number, answer: string): Promise<vo
 export async function runHasBlockingTask(runId: number): Promise<boolean> {
   const { rows } = await query<{ n: number }>(
     `SELECT COUNT(*)::int AS n FROM tasks
-     WHERE run_id = $1 AND status IN ('in_progress', 'waiting_question')`,
+     WHERE run_id = $1 AND status IN ('in_progress', 'waiting_question', 'awaiting_approval')`,
     [runId],
   );
   return Number(rows[0]?.n ?? 0) > 0;
+}
+
+// ─────────────────────────── Згенеровані зображення ──────────────────────────
+
+interface AssetRow {
+  id: number;
+  project_id: number;
+  run_id: number;
+  task_id: number;
+  ordinal: number;
+  prompt: string;
+  model: string;
+  path: string;
+  bytes: number;
+  mime_type: string;
+  status: string;
+  created_at: Date;
+}
+
+function mapAsset(row: AssetRow): GeneratedAsset {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    runId: row.run_id,
+    taskId: row.task_id,
+    ordinal: row.ordinal,
+    prompt: row.prompt,
+    model: row.model,
+    url: row.path ? `/uploads/${row.path}` : "",
+    bytes: Number(row.bytes),
+    mimeType: row.mime_type,
+    status: row.status as GeneratedAsset["status"],
+    createdAt: row.created_at.toISOString(),
+  };
+}
+
+export async function createGeneratedAsset(input: {
+  projectId: number;
+  runId: number;
+  taskId: number;
+  ordinal: number;
+  prompt: string;
+  model: string;
+  path: string;
+  bytes: number;
+  mimeType: string;
+}): Promise<GeneratedAsset> {
+  const { rows } = await query<AssetRow>(
+    `INSERT INTO generated_assets
+       (project_id, run_id, task_id, ordinal, prompt, model, path, bytes, mime_type)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+    [
+      input.projectId,
+      input.runId,
+      input.taskId,
+      input.ordinal,
+      input.prompt,
+      input.model,
+      input.path,
+      input.bytes,
+      input.mimeType,
+    ],
+  );
+  return mapAsset(rows[0]);
+}
+
+export async function listAssetsByRun(runId: number): Promise<GeneratedAsset[]> {
+  const { rows } = await query<AssetRow>(
+    "SELECT * FROM generated_assets WHERE run_id = $1 ORDER BY task_id ASC, ordinal ASC",
+    [runId],
+  );
+  return rows.map(mapAsset);
+}
+
+export async function listAssetsByTask(taskId: number): Promise<GeneratedAsset[]> {
+  const { rows } = await query<AssetRow>(
+    "SELECT * FROM generated_assets WHERE task_id = $1 ORDER BY ordinal ASC",
+    [taskId],
+  );
+  return rows.map(mapAsset);
+}
+
+/** Скільки зображень згенеровано для завдання (для маршрутизації на гейт). */
+export async function countAssetsForTask(taskId: number): Promise<number> {
+  const { rows } = await query<{ n: number }>(
+    "SELECT COUNT(*)::int AS n FROM generated_assets WHERE task_id = $1",
+    [taskId],
+  );
+  return Number(rows[0]?.n ?? 0);
+}
+
+/** Масово змінює статус усіх ассетів завдання (generated → approved/rejected). */
+export async function setTaskAssetsStatus(
+  taskId: number,
+  status: GeneratedAsset["status"],
+): Promise<void> {
+  await query("UPDATE generated_assets SET status = $2 WHERE task_id = $1", [taskId, status]);
 }
 
 /** Правка завдання власником (опис, виконавець, статус). */

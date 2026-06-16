@@ -45,8 +45,19 @@ export const env = {
   telegramOwnerChatId: process.env.TELEGRAM_OWNER_CHAT_ID ?? "",
   /** Таймаут одного виклику агента, мс (захист від «зависання» виконавця). */
   agentTimeoutMs: Number(process.env.AGENT_TIMEOUT_MS ?? 180000),
+  /**
+   * Таймаут для агента, що генерує зображення (Дизайнер): має покривати
+   * послідовні CLI-виклики Higgsfield для каруселі. Типово 30 хв.
+   */
+  imageAgentTimeoutMs: Number(process.env.IMAGE_AGENT_TIMEOUT_MS ?? 1800000),
   /** Пароль на дашборд (порожній — авторизацію вимкнено). */
   swarmPassword: process.env.SWARM_PASSWORD ?? "",
+  /** Higgsfield CLI: бінарник (типово "higgsfield" із PATH). */
+  higgsfieldBin: process.env.HIGGSFIELD_BIN || "higgsfield",
+  /** Модель генерації зображень за замовчуванням (Soul 2.0). */
+  higgsfieldImageModel: process.env.HIGGSFIELD_IMAGE_MODEL || "text2image_soul_v2",
+  /** Таймаут однієї генерації Higgsfield, мс. */
+  higgsfieldTimeoutMs: Number(process.env.HIGGSFIELD_TIMEOUT_MS ?? 600000),
 } as const;
 
 

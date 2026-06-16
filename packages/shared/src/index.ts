@@ -99,6 +99,7 @@ export type TaskStatus =
   | "pending"
   | "in_progress"
   | "waiting_question"
+  | "awaiting_approval"
   | "done"
   | "approved"
   | "failed";
@@ -117,6 +118,7 @@ export type SwarmEventType =
   | "run_completed"
   | "run_failed"
   | "question_asked"
+  | "visual_approval"
   | "draft_created";
 
 /** Прогін рою (рядок таблиці `runs`). */
@@ -136,6 +138,8 @@ export interface Run {
   costUsd: number;
   /** Ліміт витрат на прогін у USD (null — без ліміту). */
   maxBudgetUsd: number | null;
+  /** Модель Higgsfield для генерації зображень (null — серверний дефолт). */
+  imageModel: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -171,8 +175,34 @@ export interface RunTask {
   question: string;
   /** Відповідь на уточнення. */
   answer: string;
+  /** Згенеровані зображення Higgsfield (для завдань Дизайнера на гейті). */
+  generatedAssets?: GeneratedAsset[];
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Згенероване зображення (рядок таблиці `generated_assets`).
+ * Створюється інструментом `generate_image` Дизайнера; переглядається на гейті.
+ */
+export interface GeneratedAsset {
+  id: number;
+  projectId: number;
+  runId: number;
+  taskId: number;
+  /** Порядок у наборі (обкладинка=0, слайди далі). */
+  ordinal: number;
+  /** Промпт, яким згенеровано. */
+  prompt: string;
+  /** Модель Higgsfield (напр. text2image_soul_v2). */
+  model: string;
+  /** Публічний URL для показу (через статику /uploads). */
+  url: string;
+  bytes: number;
+  mimeType: string;
+  /** generated — щойно створено; approved/rejected — рішення на гейті. */
+  status: "generated" | "approved" | "rejected";
+  createdAt: string;
 }
 
 /** Сповіщення для власника (рядок таблиці `events`). */
@@ -227,6 +257,29 @@ export interface CreateRunRequest {
   size?: RunSize;
   /** Необов'язковий ліміт витрат на прогін, USD. */
   maxBudgetUsd?: number;
+  /** Модель Higgsfield для генерації зображень (опційно; інакше — дефолт). */
+  imageModel?: string;
+}
+
+/** Доступна модель генерації зображень для вибору в UI. */
+export interface ImageModelOption {
+  id: string;
+  label: string;
+  hint: string;
+}
+
+/** Курований перелік моделей Higgsfield для вибору перед запуском (перша — дефолт). */
+export const IMAGE_MODELS: readonly ImageModelOption[] = [
+  { id: "text2image_soul_v2", label: "Soul 2.0", hint: "Естетика, lifestyle, editorial (типово)" },
+  { id: "soul_cinematic", label: "Soul Cinema", hint: "Кінематографічний кадр, атмосферне світло" },
+  { id: "gpt_image_2", label: "GPT Image 2", hint: "Текст і типографіка на зображенні, банери, UI" },
+  { id: "nano_banana_2", label: "Nano Banana 2", hint: "Персонажі, стилізація, робота з референсами" },
+  { id: "z_image", label: "Z Image", hint: "Швидко й дешево для ітерацій" },
+] as const;
+
+/** Чи дозволений id моделі (для валідації на бекенді). */
+export function isValidImageModel(id: string): boolean {
+  return IMAGE_MODELS.some((m) => m.id === id);
 }
 
 /**
@@ -238,11 +291,24 @@ export interface SoloTaskRequest {
   agentSlug: string;
   goal: string;
   maxBudgetUsd?: number;
+  /** Модель Higgsfield для генерації зображень (опційно; інакше — дефолт). */
+  imageModel?: string;
 }
 
 /** Тіло запиту POST /api/runs/:id/tasks/:taskId/review. */
 export interface ReviewDecisionRequest {
   decision: "approve" | "rework";
+  comment?: string;
+}
+
+/**
+ * Тіло запиту POST /api/runs/:id/tasks/:taskId/visual — рішення власника на
+ * гейті схвалення згенерованого візуалу (посеред прогону).
+ */
+export interface VisualDecisionRequest {
+  projectId: number;
+  decision: "approve" | "rework";
+  /** Коментар для доопрацювання (для decision='rework'). */
   comment?: string;
 }
 
@@ -287,6 +353,8 @@ export interface ContentDraft {
   platform: Platform;
   title: string;
   body: string;
+  /** Публічні URL прикріплених зображень (схвалений візуал Дизайнера). */
+  imageUrls: string[];
   status: DraftStatus;
   createdAt: string;
   updatedAt: string;
